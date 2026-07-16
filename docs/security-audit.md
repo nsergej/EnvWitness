@@ -23,6 +23,7 @@ Review methods included full-file static analysis, synthetic secret canaries, re
 | Medium | A descendant inheriting output pipes could keep capture alive after its parent timed out. | POSIX process groups and Windows kill-on-close Job Objects terminate descendants and bound reader shutdown. |
 | Medium | An allowlisted file could be replaced between path validation and content read. | Files are opened first, validated from the handle, bounded during read, and checked against the path identity. |
 | Medium | The loopback read API accepted arbitrary `Host` headers, enabling browser DNS-rebinding access. | Loopback hosts are normalized and allowlisted by ASGI middleware before route dispatch. |
+| High scanner finding | HTTP capsule-name taint reached filesystem operations without a CodeQL-modeled normalization and prefix-check sequence. The existing ASCII basename expression blocked separators, but comparison names had no explicit length bound and the containment proof was opaque to the release gate. | All capsule names have a 120-character limit and a linear ASCII allowlist. Paths pass through `realpath`, a fixed-directory prefix check, and a canonical-path equality check that rejects symlink and junction redirection before filesystem use. |
 | Low | Capsule fields could inject active Markdown or raw HTML into `CAPSULE.md`. | Rendered values escape Markdown delimiters, HTML, controls, and code-span boundaries. |
 | Low | Compared fact values could escape Markdown code spans in exported reports. | Comparison rendering uses the same safe display encoding. |
 | Low | Capsule verification authenticated `manifest.json` but did not compare the embedded report. | Readers require valid UTF-8 `CAPSULE.md` and compare it with deterministic rendering of the verified manifest. |
@@ -36,7 +37,7 @@ No known finding in this review remains open in the release worktree. Capsule di
 
 The release worktree passed the following local checks:
 
-- 159 tests passed and 2 Windows symlink tests were skipped because the current account lacks symlink privileges; aggregate coverage was 86.34% against an 85% gate.
+- 160 tests passed and 2 Windows symlink tests were skipped because the current account lacks symlink privileges; aggregate coverage was 86.35% against an 85% gate.
 - Ruff formatting and linting passed.
 - strict mypy passed for 22 source files.
 - Bandit reported no issues.

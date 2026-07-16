@@ -30,7 +30,7 @@ No unreleased changes.
 - command arguments, working-directory metadata, project metadata, provenance, nested JSON keys, home-directory paths, and display controls pass through redaction before persistence;
 - Markdown renderers prevent raw HTML, code-span, table, and Unicode display-control injection;
 - archive and JSON readers reject duplicate keys, non-finite values, encrypted or duplicate members, decompression overflows, report mismatches, symlink swaps, and path-to-handle identity changes;
-- the loopback API validates Host headers against DNS rebinding, hides filesystem paths in errors, and rejects storage reparse points;
+- the loopback API validates Host headers against DNS rebinding, bounds capsule names, proves canonical storage containment, hides filesystem paths in errors, and rejects reparse-point redirection;
 - plugin processes use strict JSON, bounded streams, sanitized errors, and deterministic cleanup;
 - telemetry uses one bounded worker and rechecks consent before delivery;
 - release and continuous-integration Actions are pinned to verified immutable commit identifiers.

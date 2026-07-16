@@ -36,6 +36,39 @@ async def test_api_capture_requires_configured_token(
 
 
 @pytest.mark.anyio
+async def test_api_rejects_unsafe_and_oversized_capsule_names(
+    project_directory: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ENVWITNESS_API_TOKEN", "test-token-with-enough-entropy")
+    application = create_api_application(EnvWitnessConfiguration(), project_directory)
+    transport = httpx.ASGITransport(app=application)
+    headers = {"Authorization": "Bearer test-token-with-enough-entropy"}
+    unsafe_names = (
+        ".evw",
+        "../outside.evw",
+        "nested/capture.evw",
+        "nested\\capture.evw",
+        "unicode-ä.evw",
+        f"{'a' * 117}.evw",
+    )
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+        for capsule_name in unsafe_names:
+            response = await client.post(
+                "/api/v1/capture",
+                json={"output_name": capsule_name},
+                headers=headers,
+            )
+            assert response.status_code == 422
+
+        comparison = await client.post(
+            "/api/v1/compare",
+            json={"baseline": f"{'a' * 117}.evw", "candidate": "valid.evw"},
+        )
+        assert comparison.status_code == 422
+
+
+@pytest.mark.anyio
 async def test_api_capture_list_get_and_compare(
     project_directory: Path,
     monkeypatch,

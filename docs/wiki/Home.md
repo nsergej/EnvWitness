@@ -12,12 +12,12 @@ EnvWitness creates privacy-first diagnostic evidence capsules and compares known
 
 ## Wiki pages
 
-- [Capsule Format](Capsule-Format.md)
-- [Troubleshooting](Troubleshooting.md)
-- [Installation](../installation.md)
-- [Usage Guide](../usage.md)
-- [Privacy Guide](../privacy.md)
-- [Plugin Authoring](../plugin-authoring.md)
-- [Security Model](../security-model.md)
+- [Capsule Format](https://github.com/nsergej/EnvWitness/wiki/Capsule-Format)
+- [Troubleshooting](https://github.com/nsergej/EnvWitness/wiki/Troubleshooting)
+- [Installation](https://github.com/nsergej/EnvWitness/blob/main/docs/installation.md)
+- [Usage Guide](https://github.com/nsergej/EnvWitness/blob/main/docs/usage.md)
+- [Privacy Guide](https://github.com/nsergej/EnvWitness/blob/main/docs/privacy.md)
+- [Plugin Authoring](https://github.com/nsergej/EnvWitness/blob/main/docs/plugin-authoring.md)
+- [Security Model](https://github.com/nsergej/EnvWitness/blob/main/docs/security-model.md)
 
-Repository documentation remains authoritative. These pages are prepared for mirroring into the GitHub Wiki.
+Repository documentation remains authoritative.

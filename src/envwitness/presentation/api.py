@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import os
-import re
 import secrets
 import stat as stat_module
 from collections.abc import AsyncIterator, Iterable
@@ -26,6 +25,11 @@ from envwitness.infrastructure.archive import ZipCapsuleRepository
 from envwitness.infrastructure.bootstrap import build_capture_service
 from envwitness.infrastructure.config import EnvWitnessConfiguration
 
+_CAPSULE_NAME_MAXIMUM_LENGTH = 120
+_CAPSULE_NAME_CHARACTERS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-"
+)
+
 
 class ApiCaptureRequest(BaseModel):
     """Validated JSON body for a local capture request."""
@@ -36,7 +40,7 @@ class ApiCaptureRequest(BaseModel):
     output_name: str = Field(
         default="capture.evw",
         min_length=1,
-        max_length=120,
+        max_length=_CAPSULE_NAME_MAXIMUM_LENGTH,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.evw$",
     )
 
@@ -46,8 +50,14 @@ class ApiComparisonRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    baseline: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.evw$")
-    candidate: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.evw$")
+    baseline: str = Field(
+        max_length=_CAPSULE_NAME_MAXIMUM_LENGTH,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.evw$",
+    )
+    candidate: str = Field(
+        max_length=_CAPSULE_NAME_MAXIMUM_LENGTH,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*\.evw$",
+    )
 
 
 class LoopbackTrustedHostMiddleware:
@@ -273,20 +283,38 @@ def _safe_capsule_path(
     require_existing: bool = False,
 ) -> Path:
     """Return a safe capsule path for a strictly validated basename."""
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*\.evw", capsule_name):
+    if not _is_valid_capsule_name(capsule_name):
         raise HTTPException(status_code=400, detail="Invalid capsule name")
     _ensure_canonical_storage(storage_directory)
-    capsule_path = storage_directory / capsule_name
+
+    normalized_storage = os.path.realpath(os.fspath(storage_directory))
+    joined_capsule_path = os.path.join(normalized_storage, capsule_name)
+    normalized_capsule_path = os.path.realpath(joined_capsule_path)
+    storage_prefix = normalized_storage + os.sep
+    if not normalized_capsule_path.startswith(storage_prefix):
+        raise HTTPException(status_code=404, detail="Capsule not found or invalid")
+    if os.path.normcase(os.path.normpath(joined_capsule_path)) != os.path.normcase(
+        normalized_capsule_path
+    ):
+        raise HTTPException(status_code=404, detail="Capsule not found or invalid")
+
+    capsule_path = Path(normalized_capsule_path)
     if _is_reparse_point(capsule_path):
         raise HTTPException(status_code=404, detail="Capsule not found or invalid")
-    try:
-        resolved_capsule_path = capsule_path.resolve(strict=require_existing)
-        resolved_capsule_path.relative_to(storage_directory)
-    except (OSError, ValueError) as error:
-        raise HTTPException(status_code=404, detail="Capsule not found or invalid") from error
-    if require_existing and not resolved_capsule_path.is_file():
+    if require_existing and not capsule_path.is_file():
         raise HTTPException(status_code=404, detail="Capsule not found or invalid")
-    return resolved_capsule_path
+    return capsule_path
+
+
+def _is_valid_capsule_name(capsule_name: str) -> bool:
+    """Return whether a capsule name is one bounded portable path component."""
+    return (
+        5 <= len(capsule_name) <= _CAPSULE_NAME_MAXIMUM_LENGTH
+        and capsule_name.endswith(".evw")
+        and capsule_name[0] in _CAPSULE_NAME_CHARACTERS
+        and capsule_name[0].isalnum()
+        and all(character in _CAPSULE_NAME_CHARACTERS for character in capsule_name)
+    )
 
 
 def _read_stored_capsule(
