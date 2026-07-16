@@ -7,6 +7,7 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 ### Fixed
 
 - Git collector integration tests now skip when the Git executable is unavailable instead of checking only whether `PATH` exists.
+- PowerShell bootstrap and verification scripts now stop immediately when a native command returns a nonzero exit code.
 
 ### Added
 
