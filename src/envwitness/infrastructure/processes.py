@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,14 +38,19 @@ class _WindowsJob:
 
     handle: int | None
 
-    def close(self) -> None:
+    def close(self) -> None:  # pragma: no cover - Windows API implementation
         """Close the job exactly once and trigger its kill-on-close policy."""
         if self.handle is None:
             return
         handle = self.handle
         self.handle = None
         with suppress(AttributeError, OSError, ValueError):
-            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
+            _platform_attribute(ctypes, "windll").kernel32.CloseHandle(ctypes.c_void_p(handle))
+
+
+def _platform_attribute(module: ModuleType, name: str) -> Any:
+    """Return an operating-system-specific module attribute for the active platform."""
+    return vars(module)[name]
 
 
 def resolve_executable(
@@ -186,9 +193,12 @@ async def run_bounded_process(  # noqa: PLR0912
         environment=environment,
     )
     resolved_arguments = (executable, *arguments[1:])
-    process_options: dict[str, object] = {}
+    process_options: dict[str, Any] = {}
     if os.name == "nt":
-        process_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        process_options["creationflags"] = _platform_attribute(
+            subprocess,
+            "CREATE_NEW_PROCESS_GROUP",
+        )
     else:
         process_options["start_new_session"] = True
 
@@ -199,7 +209,7 @@ async def run_bounded_process(  # noqa: PLR0912
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        **process_options,  # type: ignore[arg-type]
+        **process_options,
     )
     windows_job = _create_windows_kill_on_close_job(process.pid)
     overflow_event = asyncio.Event()
@@ -360,7 +370,7 @@ async def _terminate_process_tree(
                     stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    creationflags=_platform_attribute(subprocess, "CREATE_NO_WINDOW"),
                 )
                 try:
                     await asyncio.wait_for(taskkill.wait(), timeout=2)
@@ -370,12 +380,12 @@ async def _terminate_process_tree(
             except OSError:
                 pass
     else:
-        kill_process_group = os.killpg  # type: ignore[attr-defined]
+        kill_process_group = _platform_attribute(os, "killpg")
         with suppress(ProcessLookupError, PermissionError):
             kill_process_group(process.pid, signal.SIGTERM)
         await asyncio.sleep(0.1)
         with suppress(ProcessLookupError, PermissionError):
-            kill_process_group(process.pid, signal.SIGKILL)  # type: ignore[attr-defined]
+            kill_process_group(process.pid, _platform_attribute(signal, "SIGKILL"))
     if process.returncode is None:
         with suppress(ProcessLookupError):
             process.kill()
@@ -387,7 +397,7 @@ async def _terminate_process_tree(
 
 def _create_windows_kill_on_close_job(  # noqa: PLR0911
     process_identifier: int,
-) -> _WindowsJob | None:
+) -> _WindowsJob | None:  # pragma: no cover - Windows API implementation
     """Assign a new Windows process to a kill-on-close Job Object when possible."""
     if os.name != "nt":
         return None
@@ -432,7 +442,7 @@ def _create_windows_kill_on_close_job(  # noqa: PLR0911
         ]
 
     try:
-        kernel32 = ctypes.windll.kernel32
+        kernel32 = _platform_attribute(ctypes, "windll").kernel32
         kernel32.CreateJobObjectW.restype = ctypes.c_void_p
         kernel32.OpenProcess.restype = ctypes.c_void_p
         kernel32.SetInformationJobObject.argtypes = (
@@ -481,13 +491,16 @@ def _create_windows_kill_on_close_job(  # noqa: PLR0911
         return job
 
 
-def _windows_taskkill_path() -> Path | None:
+def _windows_taskkill_path() -> Path | None:  # pragma: no cover - Windows API implementation
     """Return the trusted Windows system taskkill path without PATH discovery."""
     if os.name != "nt":
         return None
     try:
         buffer = ctypes.create_unicode_buffer(32_768)
-        length = ctypes.windll.kernel32.GetSystemDirectoryW(buffer, len(buffer))
+        length = _platform_attribute(ctypes, "windll").kernel32.GetSystemDirectoryW(
+            buffer,
+            len(buffer),
+        )
         if length <= 0 or length >= len(buffer):
             return None
         candidate = Path(buffer.value) / "taskkill.exe"

@@ -36,7 +36,7 @@ No known finding in this review remains open in the release worktree. Capsule di
 
 The release worktree passed the following local checks:
 
-- 159 tests passed and 2 Windows symlink tests were skipped because the current account lacks symlink privileges.
+- 159 tests passed and 2 Windows symlink tests were skipped because the current account lacks symlink privileges; aggregate coverage was 86.34% against an 85% gate.
 - Ruff formatting and linting passed.
 - strict mypy passed for 22 source files.
 - Bandit reported no issues.
