@@ -12,4 +12,4 @@ cd "$repository_root"
 "$python_command" -m bandit -c pyproject.toml -r src
 "$python_command" scripts/validate_repository.py
 "$python_command" -m build
-"$python_command" -m pip_audit
+"$python_command" -m pip_audit . --progress-spinner off

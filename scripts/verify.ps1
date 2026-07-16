@@ -35,7 +35,7 @@ try {
     Invoke-PythonStep -Name "Bandit" -Arguments @("-m", "bandit", "-c", "pyproject.toml", "-r", "src")
     Invoke-PythonStep -Name "Repository validation" -Arguments @("scripts/validate_repository.py")
     Invoke-PythonStep -Name "Package build" -Arguments @("-m", "build")
-    Invoke-PythonStep -Name "Dependency audit" -Arguments @("-m", "pip_audit")
+    Invoke-PythonStep -Name "Dependency audit" -Arguments @("-m", "pip_audit", ".", "--progress-spinner", "off")
 }
 finally {
     Pop-Location
