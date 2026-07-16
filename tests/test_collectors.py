@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -135,7 +135,17 @@ def test_command_runner_missing_executable(project_directory: Path) -> None:
         )
 
 
-@pytest.mark.skipif(not os.environ.get("PATH"), reason="Git executable lookup needs PATH")
+def test_git_collector_reports_unavailable(
+    project_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("envwitness.infrastructure.collectors.shutil.which", lambda _: None)
+    facts = asyncio.run(GitCollector().collect(context(project_directory)))
+    values = {fact.key: fact.value for fact in facts}
+    assert values == {"git.available": False}
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="Git executable is unavailable")
 def test_git_collector_reads_repository_state(project_directory: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=project_directory, check=True)
     subprocess.run(

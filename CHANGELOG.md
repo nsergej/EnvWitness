@@ -4,7 +4,13 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
-No user-visible changes yet.
+### Fixed
+
+- Git collector integration tests now skip when the Git executable is unavailable instead of checking only whether `PATH` exists.
+
+### Added
+
+- explicit coverage for the production behavior when Git is unavailable.
 
 ## [1.0.0] - 2026-07-16
 
