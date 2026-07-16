@@ -5,15 +5,13 @@ services:
       dockerfile: docker/Dockerfile
     image: envwitness:1.0.0
     command:
-      - serve
+      - capture
       - --config
       - /etc/envwitness/envwitness.yml
       - --project-root
       - /workspace
-    environment:
-      ENVWITNESS_API_TOKEN: ${ENVWITNESS_API_TOKEN:?Set ENVWITNESS_API_TOKEN}
-    ports:
-      - "127.0.0.1:8765:8765"
+      - --output
+      - /workspace/${ENVWITNESS_OUTPUT:-envwitness-capture.evw}
     volumes:
       - type: bind
         source: ${ENVWITNESS_PROJECT_PATH:-..}
@@ -25,14 +23,3 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/healthz', timeout=2).read(32)"
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s

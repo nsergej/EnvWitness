@@ -2,7 +2,7 @@
 
 Start the local service with `envwitness serve --config envwitness.yml`. OpenAPI is available at `/api/openapi.json` and interactive documentation at `/api/docs`.
 
-The API binds only to a loopback address. JSON request models reject unknown properties.
+The API binds only to a loopback address. JSON request models reject unknown properties. Host validation accepts only the configured loopback host and local loopback aliases; a rejected `Host` header returns `400`.
 
 ## Authentication
 
@@ -13,6 +13,8 @@ Authorization: Bearer <value of ENVWITNESS_API_TOKEN>
 ```
 
 The environment variable name is configurable. A missing server-side token returns `503`; a missing or incorrect bearer token returns `401`.
+
+The read and comparison endpoints intentionally do not require a token because the server is local-only. Anyone able to access the listening process can read capsule metadata and manifests. Do not expose the service through a reverse proxy, tunnel, port forward, or container port mapping.
 
 ## Operations
 
@@ -97,3 +99,28 @@ curl -X POST http://127.0.0.1:8765/api/v1/compare \
 ```
 
 The bundled browser interface uses these same endpoints; there is no separate privileged backend.
+
+## Limits and validation
+
+| Input | Boundary |
+| --- | --- |
+| Capture command | At most 256 direct arguments; no shell interpretation. |
+| Output name | 1 to 120 characters, safe `.evw` basename only. |
+| Capsule names | Letters, digits, dot, underscore, and hyphen; `.evw` suffix required. |
+| Storage | Fixed project-relative directory; traversal and absolute paths are rejected. |
+| Archive reads | 25 MiB compressed and 50 MiB expanded, with known members only. |
+| Request models | Unknown JSON properties are rejected. |
+
+## Error responses
+
+FastAPI validation failures return `422` with structured validation details. Authentication failures return `401` and `WWW-Authenticate: Bearer`; an unset mutation token returns `503`; a missing or invalid stored capsule returns `404`; unsafe capsule basenames return `400`. Internal exception details and absolute storage paths are not part of the API contract.
+
+## OpenAPI integration
+
+Retrieve the machine-readable schema from:
+
+```bash
+curl --fail http://127.0.0.1:8765/api/openapi.json --output envwitness-openapi.json
+```
+
+Clients should treat additional response fields in minor versions as compatible and must not send unknown request fields. The stable Python API is documented separately in [Python API](python-api.md).

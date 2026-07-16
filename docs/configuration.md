@@ -92,12 +92,12 @@ Delivery additionally requires `envwitness telemetry enable`. Either switch bein
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `automatic_check` | boolean | `false` | Check PyPI when `capture` or `serve` starts and the interval is due. |
+| `automatic_check` | boolean | `false` | Check the fixed package-index endpoint when `capture` or `serve` starts and the interval is due. |
 | `automatic_install` | boolean | `false` | Install the exact discovered stable version. Requires automatic checks. |
 | `metadata_url` | string | canonical PyPI URL | Fixed to `https://pypi.org/pypi/envwitness/json`. |
 | `check_interval_hours` | integer | `24` | 1 through 720. |
 
-The last successful automatic check is stored at `~/.config/envwitness/updates.json`. Update failures are logged and never block capture or service startup.
+The last successful automatic check is stored at `~/.config/envwitness/updates.json`. Update failures are logged and never block capture or service startup. EnvWitness 1.0 is distributed only through GitHub Releases, so this updater cannot discover 1.0 and should remain disabled. The fields are retained for configuration compatibility with a possible future package-index release.
 
 ## Complete example
 

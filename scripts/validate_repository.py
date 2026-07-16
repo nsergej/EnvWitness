@@ -16,6 +16,7 @@ from envwitness.infrastructure.config import load_configuration
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_PATHS = (
     "README.md",
+    "BUILDING.md",
     "LICENSE",
     "CONTRIBUTING.md",
     "SECURITY.md",
@@ -37,6 +38,7 @@ PLACEHOLDER_WORDS = (
     "NotImplemented" + chr(69) + "rror",
 )
 PLACEHOLDER_PATTERN = re.compile(r"\b(?:" + "|".join(PLACEHOLDER_WORDS) + r")\b")
+REMOTE_ACTION_REFERENCE = re.compile(r"\buses:\s*[^\s#]+@([^\s#]+)")
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -166,6 +168,82 @@ def validate_no_code_placeholders() -> list[str]:
     return errors
 
 
+def validate_public_distribution_claims() -> list[str]:
+    """Return errors for stale ownership or unavailable distribution instructions."""
+    errors: list[str] = []
+    public_paths = (
+        ROOT / "README.md",
+        ROOT / "BUILDING.md",
+        ROOT / "CONTRIBUTING.md",
+        ROOT / "CHANGELOG.md",
+        ROOT / "CITATION.cff",
+        ROOT / "pyproject.toml",
+        ROOT / "docs",
+        ROOT / ".github",
+        ROOT / "docker",
+        ROOT / "release",
+    )
+    prohibited_patterns = {
+        "stale repository owner": re.compile(
+            r"github\.com/envwitness/envwitness",
+            flags=re.IGNORECASE,
+        ),
+        "unpublished PyPI project link": re.compile(
+            r"https://pypi\.org/project/envwitness/?",
+            flags=re.IGNORECASE,
+        ),
+        "unavailable direct pipx install": re.compile(
+            r"\bpipx install envwitness(?:==[^\s]+)?\s*$",
+            flags=re.IGNORECASE | re.MULTILINE,
+        ),
+        "unavailable direct uv install": re.compile(
+            r"\buv tool install envwitness(?:==[^\s]+)?\s*$",
+            flags=re.IGNORECASE | re.MULTILINE,
+        ),
+    }
+    files: list[Path] = []
+    for public_path in public_paths:
+        if public_path.is_file():
+            files.append(public_path)
+        elif public_path.is_dir():
+            files.extend(
+                path
+                for path in public_path.rglob("*")
+                if path.is_file() and path.suffix.lower() in {".md", ".toml", ".yml", ".yaml"}
+            )
+    for public_file in sorted(set(files)):
+        content = public_file.read_text(encoding="utf-8")
+        for claim_name, pattern in prohibited_patterns.items():
+            if pattern.search(content):
+                errors.append(f"Found {claim_name} in {public_file.relative_to(ROOT)}")
+    release_workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    if "gh-action-pypi-publish" in release_workflow:
+        errors.append("Release workflow must not publish the GitHub-only 1.0 release to PyPI")
+    required_release_assets = ("SHA256SUMS", "spdx.json", "attest-build-provenance")
+    errors.extend(
+        f"Release workflow is missing required asset: {release_asset}"
+        for release_asset in required_release_assets
+        if release_asset not in release_workflow
+    )
+    return errors
+
+
+def validate_pinned_actions() -> list[str]:
+    """Return errors for remote workflow actions not pinned to immutable commits."""
+    errors: list[str] = []
+    workflow_directory = ROOT / ".github" / "workflows"
+    for workflow_path in sorted(workflow_directory.glob("*.yml")):
+        content = workflow_path.read_text(encoding="utf-8")
+        for match in REMOTE_ACTION_REFERENCE.finditer(content):
+            reference = match.group(1)
+            if not re.fullmatch(r"[a-f0-9]{40}", reference):
+                errors.append(
+                    "Remote action is not commit-pinned in "
+                    f"{workflow_path.relative_to(ROOT)}: {reference}"
+                )
+    return errors
+
+
 def main() -> None:
     """Run repository validations and fail with a readable combined report."""
     errors = [
@@ -175,6 +253,8 @@ def main() -> None:
         *validate_examples(),
         *validate_yaml_documents(),
         *validate_no_code_placeholders(),
+        *validate_public_distribution_claims(),
+        *validate_pinned_actions(),
     ]
     if errors:
         raise SystemExit("Repository validation failed:\n- " + "\n- ".join(errors))

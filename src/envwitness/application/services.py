@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import secrets
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +16,7 @@ from envwitness.application.ports import (
     CapsuleRepository,
     CaptureContext,
     CollectedFact,
+    CommandResult,
     CommandRunner,
     EvidenceCollector,
     EvidenceRedactor,
@@ -27,11 +30,26 @@ from envwitness.domain.models import (
     DifferenceKind,
     DifferenceSeverity,
     FactDifference,
+    RedactionSummary,
     Sensitivity,
+    has_unsafe_control_characters,
     utc_now,
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def default_project_label(project_root: Path) -> str:
+    """Return a useful project label without exposing the home-directory name."""
+    resolved_root = project_root.resolve(strict=True)
+    try:
+        resolved_home = Path.home().resolve(strict=True)
+    except OSError:
+        resolved_home = None
+    if resolved_home is not None and resolved_root == resolved_home:
+        return "home-directory"
+    label = resolved_root.name.strip() or "filesystem-root"
+    return "project" if has_unsafe_control_characters(label) else label
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +72,8 @@ class CaptureRequest:
             raise CaptureError(f"Project root is not a directory: {self.project_root}")
         if not self.project_name.strip() or len(self.project_name) > 120:
             raise CaptureError("Project name must contain between 1 and 120 characters")
+        if has_unsafe_control_characters(self.project_name):
+            raise CaptureError("Project name cannot contain control characters")
         if not 1 <= self.command_timeout_seconds <= 86_400:
             raise CaptureError("Command timeout must be between 1 second and 24 hours")
         if not 4_096 <= self.maximum_output_bytes <= 16_777_216:
@@ -115,7 +135,7 @@ class CaptureService:
         )
         LOGGER.info("capture_started", extra={"collector_count": len(self._collectors)})
 
-        command_task = None
+        command_task: asyncio.Task[CommandResult] | None = None
         if request.command:
             command_task = asyncio.create_task(
                 self._command_runner.run(
@@ -126,73 +146,149 @@ class CaptureService:
                 )
             )
 
-        collector_results = await self._collect_all(context)
-        command_result = await command_task if command_task is not None else None
-        collected_facts = [fact for result in collector_results for fact in result]
+        try:
+            collector_results = await self._collect_all(context)
+            command_result = await command_task if command_task is not None else None
+            collected_facts = [fact for result in collector_results for fact in result]
 
-        if command_result is not None:
-            timestamp = command_result.execution.finished_at
-            collected_facts.extend(
-                [
+            if command_result is not None:
+                timestamp = command_result.execution.finished_at
+                collected_facts.extend(
+                    [
+                        CollectedFact(
+                            key="command.standard_output",
+                            value=command_result.standard_output,
+                            collector="command",
+                            source="captured process standard output",
+                            sensitivity=Sensitivity.SENSITIVE,
+                            captured_at=timestamp,
+                        ),
+                        CollectedFact(
+                            key="command.standard_error",
+                            value=command_result.standard_error,
+                            collector="command",
+                            source="captured process standard error",
+                            sensitivity=Sensitivity.SENSITIVE,
+                            captured_at=timestamp,
+                        ),
+                        CollectedFact(
+                            key="command.exit_code",
+                            value=command_result.execution.exit_code,
+                            collector="command",
+                            source="captured process exit status",
+                            sensitivity=Sensitivity.PUBLIC,
+                            captured_at=timestamp,
+                        ),
+                    ]
+                )
+
+            self._require_unique_keys(collected_facts)
+            stored_facts, redaction_summary = self._redactor.redact(collected_facts)
+            stored_command = command_result.execution if command_result is not None else None
+            project_root_label = default_project_label(project_root)
+            metadata_facts = [
+                CollectedFact(
+                    key="envwitness.project.name",
+                    value=request.project_name.strip(),
+                    collector="envwitness",
+                    source="configured or derived project name",
+                    sensitivity=Sensitivity.INTERNAL,
+                    captured_at=utc_now(),
+                ),
+                CollectedFact(
+                    key="envwitness.project.root_label",
+                    value=project_root_label,
+                    collector="envwitness",
+                    source="privacy-safe project root label",
+                    sensitivity=Sensitivity.INTERNAL,
+                    captured_at=utc_now(),
+                ),
+            ]
+            if stored_command is not None:
+                metadata_facts.append(
                     CollectedFact(
-                        key="command.standard_output",
-                        value=command_result.standard_output,
+                        key="envwitness.command.arguments",
+                        value=list(stored_command.arguments),
                         collector="command",
-                        source="captured process standard output",
-                        sensitivity=Sensitivity.SENSITIVE,
-                        captured_at=timestamp,
-                    ),
+                        source="captured process argument vector",
+                        sensitivity=Sensitivity.INTERNAL,
+                        captured_at=stored_command.finished_at,
+                    )
+                )
+                metadata_facts.append(
                     CollectedFact(
-                        key="command.standard_error",
-                        value=command_result.standard_error,
+                        key="envwitness.command.working_directory",
+                        value=stored_command.working_directory,
                         collector="command",
-                        source="captured process standard error",
-                        sensitivity=Sensitivity.SENSITIVE,
-                        captured_at=timestamp,
-                    ),
-                    CollectedFact(
-                        key="command.exit_code",
-                        value=command_result.execution.exit_code,
-                        collector="command",
-                        source="captured process exit status",
-                        sensitivity=Sensitivity.PUBLIC,
-                        captured_at=timestamp,
-                    ),
-                ]
+                        source="captured process working directory",
+                        sensitivity=Sensitivity.INTERNAL,
+                        captured_at=stored_command.finished_at,
+                    )
+                )
+            redacted_metadata, metadata_summary = self._redactor.redact(metadata_facts)
+            metadata_by_key = {fact.key: fact.value for fact in redacted_metadata}
+            stored_project_name = metadata_by_key["envwitness.project.name"]
+            stored_project_root_label = metadata_by_key["envwitness.project.root_label"]
+            if not isinstance(stored_project_name, str) or not isinstance(
+                stored_project_root_label,
+                str,
+            ):
+                raise CaptureError("Redactor returned invalid project metadata")
+            if stored_command is not None:
+                argument_value = metadata_by_key["envwitness.command.arguments"]
+                working_directory_value = metadata_by_key["envwitness.command.working_directory"]
+                if not isinstance(argument_value, list) or not all(
+                    isinstance(argument, str) for argument in argument_value
+                ):
+                    raise CaptureError("Redactor returned invalid command arguments")
+                if not isinstance(working_directory_value, str):
+                    raise CaptureError("Redactor returned an invalid command working directory")
+                stored_command = stored_command.model_copy(
+                    update={
+                        "arguments": tuple(argument_value),
+                        "working_directory": working_directory_value,
+                    }
+                )
+            redaction_summary = self._merge_redaction_summaries(
+                redaction_summary,
+                metadata_summary,
             )
 
-        self._require_unique_keys(collected_facts)
-        stored_facts, redaction_summary = self._redactor.redact(collected_facts)
-        capsule = Capsule(
-            capsule_identifier=f"ew-{secrets.token_hex(12)}",
-            created_at=utc_now(),
-            tool_version=self._tool_version,
-            project_name=request.project_name.strip(),
-            project_root_label=project_root.name,
-            facts=tuple(sorted(stored_facts, key=lambda fact: fact.key)),
-            command=command_result.execution if command_result is not None else None,
-            redaction=redaction_summary,
-            plugins=tuple(
-                collector.name
-                for collector in self._collectors
-                if collector.name.startswith("plugin.")
-            ),
-        ).seal()
-        final_path = self._repository.write(capsule, request.destination)
-        self._telemetry.record(
-            "capture_completed",
-            {
-                "fact_count": len(capsule.facts),
-                "plugin_count": len(capsule.plugins),
-                "redacted_fact_count": capsule.redaction.facts_redacted,
-                "command_captured": capsule.command is not None,
-            },
-        )
-        LOGGER.info(
-            "capture_completed",
-            extra={"fact_count": len(capsule.facts), "destination": str(final_path)},
-        )
-        return capsule, final_path
+            capsule = Capsule(
+                capsule_identifier=f"ew-{secrets.token_hex(12)}",
+                created_at=utc_now(),
+                tool_version=self._tool_version,
+                project_name=stored_project_name,
+                project_root_label=stored_project_root_label,
+                facts=tuple(sorted(stored_facts, key=lambda fact: fact.key)),
+                command=stored_command,
+                redaction=redaction_summary,
+                plugins=tuple(
+                    collector.name
+                    for collector in self._collectors
+                    if collector.name.startswith("plugin.")
+                ),
+            ).seal()
+            final_path = self._repository.write(capsule, request.destination)
+            self._telemetry.record(
+                "capture_completed",
+                {
+                    "fact_count": len(capsule.facts),
+                    "plugin_count": len(capsule.plugins),
+                    "redacted_fact_count": capsule.redaction.facts_redacted,
+                    "command_captured": capsule.command is not None,
+                },
+            )
+            LOGGER.info(
+                "capture_completed",
+                extra={"fact_count": len(capsule.facts), "destination": str(final_path)},
+            )
+            return capsule, final_path
+        finally:
+            if command_task is not None:
+                if not command_task.done():
+                    command_task.cancel()
+                await asyncio.gather(command_task, return_exceptions=True)
 
     async def _collect_all(self, context: CaptureContext) -> list[list[CollectedFact]]:
         """Run independent collectors concurrently and preserve typed failures."""
@@ -215,6 +311,21 @@ class CaptureService:
         if duplicates:
             duplicate_list = ", ".join(sorted(duplicates))
             raise CaptureError(f"Collectors produced duplicate fact keys: {duplicate_list}")
+
+    @staticmethod
+    def _merge_redaction_summaries(
+        first: RedactionSummary,
+        second: RedactionSummary,
+    ) -> RedactionSummary:
+        """Combine redaction accounting for facts and persisted command metadata."""
+        rule_counts = Counter(first.rules_triggered)
+        rule_counts.update(second.rules_triggered)
+        return RedactionSummary(
+            facts_scanned=first.facts_scanned + second.facts_scanned,
+            facts_redacted=first.facts_redacted + second.facts_redacted,
+            replacements=first.replacements + second.replacements,
+            rules_triggered=dict(sorted(rule_counts.items())),
+        )
 
 
 class ComparisonService:
@@ -393,13 +504,14 @@ class ReportRenderer:
         if capsule.command is not None:
             command_line = " ".join(capsule.command.arguments)
         lines = [
-            f"# EnvWitness report: {capsule.project_name}",
+            f"# EnvWitness report: {self._code_span(capsule.project_name)}",
             "",
-            f"- Capsule: `{capsule.capsule_identifier}`",
-            f"- Created: `{capsule.created_at.isoformat()}`",
-            f"- Integrity: `{'verified' if capsule.verify_integrity() else 'invalid'}`",
-            f"- Command: `{command_line}`",
-            f"- Redacted facts: `{capsule.redaction.facts_redacted}`",
+            f"- Capsule: {self._code_span(capsule.capsule_identifier)}",
+            f"- Created: {self._code_span(capsule.created_at.isoformat())}",
+            "- Integrity: "
+            + self._code_span("verified" if capsule.verify_integrity() else "invalid"),
+            f"- Command: {self._code_span(command_line)}",
+            f"- Redacted facts: {self._code_span(str(capsule.redaction.facts_redacted))}",
             "",
             "## Evidence",
             "",
@@ -408,10 +520,11 @@ class ReportRenderer:
         ]
         for fact in capsule.facts:
             rendered_value = json.dumps(fact.value, ensure_ascii=False, sort_keys=True)
-            safe_value = rendered_value.replace("|", "\\|").replace("\n", "<br>")
             lines.append(
-                f"| `{fact.key}` | `{safe_value}` | `{fact.collector}` | "
-                f"`{fact.sensitivity.value}` |"
+                f"| {self._table_code_span(fact.key)} | "
+                f"{self._table_code_span(rendered_value)} | "
+                f"{self._table_code_span(fact.collector)} | "
+                f"{self._table_code_span(fact.sensitivity.value)} |"
             )
         lines.append("")
         return "\n".join(lines)
@@ -421,16 +534,23 @@ class ReportRenderer:
         lines = [
             "# EnvWitness comparison",
             "",
-            f"- Baseline: `{report.baseline_capsule_identifier}`",
-            f"- Candidate: `{report.candidate_capsule_identifier}`",
-            f"- Identical: `{'yes' if report.identical else 'no'}`",
+            f"- Baseline: {self._code_span(report.baseline_capsule_identifier)}",
+            f"- Candidate: {self._code_span(report.candidate_capsule_identifier)}",
+            f"- Identical: {self._code_span('yes' if report.identical else 'no')}",
             "",
             "## Diagnostic hints",
             "",
         ]
         if report.hints:
             for hint in report.hints:
-                lines.extend([f"### {hint.title}", "", hint.explanation, ""])
+                lines.extend(
+                    [
+                        f"### {self._code_span(hint.title)}",
+                        "",
+                        self._code_span(hint.explanation),
+                        "",
+                    ]
+                )
         else:
             lines.extend(["No semantic drift was detected.", ""])
         lines.extend(
@@ -445,8 +565,11 @@ class ReportRenderer:
             baseline_value = self._table_value(difference.baseline_value)
             candidate_value = self._table_value(difference.candidate_value)
             lines.append(
-                f"| `{difference.severity.value}` | `{difference.key}` | "
-                f"`{difference.kind.value}` | `{baseline_value}` | `{candidate_value}` |"
+                f"| {self._table_code_span(difference.severity.value)} | "
+                f"{self._table_code_span(difference.key)} | "
+                f"{self._table_code_span(difference.kind.value)} | "
+                f"{self._table_code_span(baseline_value)} | "
+                f"{self._table_code_span(candidate_value)} |"
             )
         lines.append("")
         return "\n".join(lines)
@@ -456,8 +579,25 @@ class ReportRenderer:
         """Render a JSON value safely inside a Markdown table cell."""
         if value is None:
             return "-"
-        return (
-            json.dumps(value, ensure_ascii=False, sort_keys=True)
-            .replace("|", "\\|")
-            .replace("\n", "<br>")
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _code_span(value: str) -> str:
+        """Wrap arbitrary text in a CommonMark code span without delimiter breakout."""
+        normalized = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+        normalized = "".join(
+            f"\\u{ord(character):04x}" if has_unsafe_control_characters(character) else character
+            for character in normalized
         )
+        longest_run = max(
+            (len(match.group(0)) for match in re.finditer(r"`+", normalized)),
+            default=0,
+        )
+        delimiter = "`" * (longest_run + 1)
+        return f"{delimiter} {normalized} {delimiter}"
+
+    @classmethod
+    def _table_code_span(cls, value: str) -> str:
+        """Render arbitrary text in a code span that cannot split a Markdown table."""
+        table_safe = value.replace("|", "\\u007c").replace("\r", "\\r").replace("\n", "\\n")
+        return cls._code_span(table_safe)

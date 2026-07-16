@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Self
@@ -74,6 +75,11 @@ def digest_value(value: Any) -> str:
 def utc_now() -> datetime:
     """Return a timezone-aware current UTC timestamp."""
     return datetime.now(UTC)
+
+
+def has_unsafe_control_characters(value: str) -> bool:
+    """Return whether text contains control or invisible formatting characters."""
+    return any(unicodedata.category(character) in {"Cc", "Cf"} for character in value)
 
 
 def _json_default(value: Any) -> str:
@@ -215,6 +221,14 @@ class Capsule(BaseModel):
     redaction: RedactionSummary
     plugins: tuple[str, ...] = ()
     integrity: CapsuleIntegrity | None = None
+
+    @field_validator("project_name", "project_root_label")
+    @classmethod
+    def project_labels_are_display_safe(cls, value: str) -> str:
+        """Reject control characters from labels shown by terminal and web clients."""
+        if has_unsafe_control_characters(value):
+            raise ValueError("Project labels cannot contain control characters")
+        return value
 
     @field_validator("facts")
     @classmethod

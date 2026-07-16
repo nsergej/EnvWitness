@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from packaging.version import InvalidVersion, Version
 
 from envwitness.domain.errors import UpdateError
+
+_STALE_LOCK_AGE = timedelta(minutes=10)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +89,7 @@ class PyPiUpdater:
         return UpdateStatus(
             current_version=self._current_version,
             latest_version=latest_version,
-            update_available=latest > current,
+            update_available=_is_stable_version(latest) and latest > current,
         )
 
     def install(self, version: str) -> None:
@@ -92,7 +98,7 @@ class PyPiUpdater:
             normalized_version = Version(version)
         except InvalidVersion as error:
             raise UpdateError(f"Invalid requested version: {version}") from error
-        if normalized_version.is_prerelease or normalized_version.is_devrelease:
+        if not _is_stable_version(normalized_version):
             raise UpdateError("Automatic installation accepts stable releases only")
         command = (
             sys.executable,
@@ -149,15 +155,26 @@ class AutomaticUpdateCoordinator:
             raise UpdateError("Update check interval must be between 1 and 720 hours")
 
         current_time = (now or datetime.now(UTC)).astimezone(UTC)
-        if not self._is_due(current_time, interval_hours):
-            return AutomaticUpdateResult(checked=False)
+        lock_path = self._state_path.with_name(f"{self._state_path.name}.lock")
+        with _try_update_lock(lock_path, current_time) as lock_acquired:
+            if not lock_acquired or not self._is_due(current_time, interval_hours):
+                return AutomaticUpdateResult(checked=False)
 
-        status = self._updater.check()
-        self._write_state(current_time)
-        if automatic_install and status.update_available:
-            self._updater.install(status.latest_version)
-            return AutomaticUpdateResult(checked=True, installed_version=status.latest_version)
-        return AutomaticUpdateResult(checked=True)
+            status = self._updater.check()
+            self._write_state(current_time)
+            if automatic_install and status.update_available:
+                try:
+                    discovered_version = Version(status.latest_version)
+                except InvalidVersion as error:
+                    raise UpdateError("Updater returned an invalid release version") from error
+                if not _is_stable_version(discovered_version):
+                    raise UpdateError("Automatic installation accepts stable releases only")
+                self._updater.install(status.latest_version)
+                return AutomaticUpdateResult(
+                    checked=True,
+                    installed_version=status.latest_version,
+                )
+            return AutomaticUpdateResult(checked=True)
 
     def _is_due(self, current_time: datetime, interval_hours: int) -> bool:
         """Return whether the persisted successful check is outside the interval."""
@@ -171,16 +188,21 @@ class AutomaticUpdateCoordinator:
             last_checked = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
             if last_checked.tzinfo is None:
                 return True
-            return current_time - last_checked.astimezone(UTC) >= timedelta(hours=interval_hours)
+            normalized_last_checked = last_checked.astimezone(UTC)
+            if normalized_last_checked > current_time:
+                return True
+            return current_time - normalized_last_checked >= timedelta(hours=interval_hours)
         except (OSError, UnicodeError, json.JSONDecodeError, KeyError, ValueError, TypeError):
             return True
 
     def _write_state(self, checked_at: datetime) -> None:
         """Persist one successful check timestamp using an atomic replacement."""
-        self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary_path = self._state_path.with_suffix(self._state_path.suffix + ".temporary")
+        temporary_path = self._state_path.with_name(
+            f".{self._state_path.name}.{os.getpid()}.{uuid4().hex}.temporary"
+        )
         payload = {"last_checked_at": checked_at.isoformat().replace("+00:00", "Z")}
         try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
             temporary_path.write_text(
                 json.dumps(payload, indent=2) + "\n",
                 encoding="utf-8",
@@ -189,6 +211,69 @@ class AutomaticUpdateCoordinator:
         except OSError as error:
             temporary_path.unlink(missing_ok=True)
             raise UpdateError(f"Cannot persist update check state: {error}") from error
+
+
+def _is_stable_version(version: Version) -> bool:
+    """Return whether a normalized version represents a public stable release."""
+    return not version.is_prerelease and not version.is_devrelease and version.local is None
+
+
+@contextmanager
+def _try_update_lock(lock_path: Path, current_time: datetime) -> Iterator[bool]:
+    """Acquire a cross-process lock atomically without waiting for another command."""
+    lock_token = uuid4().hex
+    file_descriptor: int | None = None
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        _remove_stale_lock(lock_path, current_time)
+    except OSError as error:
+        raise UpdateError(f"Cannot acquire update state lock: {error}") from error
+    try:
+        file_descriptor = os.open(
+            lock_path,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
+        )
+        os.write(file_descriptor, lock_token.encode("ascii"))
+    except FileExistsError:
+        yield False
+        return
+    except OSError as error:
+        if file_descriptor is not None:
+            with suppress(OSError):
+                os.close(file_descriptor)
+                lock_path.unlink(missing_ok=True)
+        raise UpdateError(f"Cannot acquire update state lock: {error}") from error
+
+    try:
+        yield True
+    finally:
+        if file_descriptor is not None:
+            with suppress(OSError):
+                os.close(file_descriptor)
+        with suppress(OSError, UnicodeError):
+            if lock_path.read_text(encoding="ascii") == lock_token:
+                lock_path.unlink(missing_ok=True)
+
+
+def _remove_stale_lock(lock_path: Path, current_time: datetime) -> None:
+    """Remove a lock left behind by a process that exceeded all updater timeouts."""
+    try:
+        initial_status = lock_path.stat()
+    except FileNotFoundError:
+        return
+    lock_age = current_time.timestamp() - initial_status.st_mtime
+    if lock_age <= _STALE_LOCK_AGE.total_seconds():
+        return
+    try:
+        confirmed_status = lock_path.stat()
+        if (
+            confirmed_status.st_mtime_ns == initial_status.st_mtime_ns
+            and confirmed_status.st_size == initial_status.st_size
+        ):
+            lock_path.unlink(missing_ok=True)
+    except FileNotFoundError:
+        return
 
 
 def default_update_state_path() -> Path:

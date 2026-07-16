@@ -1,6 +1,6 @@
 # Project Management
 
-This document is the source for the initial GitHub labels, issues, milestones, and project board. Each issue is independently deliverable and includes observable acceptance criteria.
+This document is the source for the initial GitHub labels, issues, milestones, and project board. Each issue is independently deliverable and includes observable acceptance criteria. The definitions below are prepared content, not a claim that the corresponding GitHub objects already exist.
 
 ## Labels
 
@@ -11,6 +11,7 @@ This document is the source for the initial GitHub labels, issues, milestones, a
 | `area: plugins` | `5319e7` | Process protocol and ecosystem. |
 | `area: dashboard` | `1d76db` | Browser interface and API. |
 | `area: packaging` | `006b75` | Installation, Docker, and releases. |
+| `type: bug` | `d73a4a` | Reproducible incorrect behavior. |
 | `type: feature` | `a2eeef` | New user-facing behavior. |
 | `type: security` | `d93f0b` | Security hardening. |
 | `good first issue` | `7057ff` | Small, documented contributor entry point. |

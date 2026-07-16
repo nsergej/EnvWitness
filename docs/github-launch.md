@@ -29,18 +29,20 @@ Version 1.0 includes cross-platform collectors, command capture, global secret r
 Try it:
 
 ```console
-pipx install envwitness
+pipx install https://github.com/nsergej/EnvWitness/releases/download/v1.0.0/envwitness-1.0.0-py3-none-any.whl
 envwitness capture --output failing.evw -- python -m pytest
 envwitness inspect failing.evw
 ```
 
 ## Launch checklist
 
-- Publish the signed `v1.0.0` tag and GitHub Release using [`release/v1.0.0.md`](../release/v1.0.0.md).
-- Publish the build attestation and PyPI package through the release workflow.
+- Publish the reviewed `v1.0.0` tag and GitHub Release using [`release/v1.0.0.md`](../release/v1.0.0.md). Do not describe the tag as cryptographically signed unless a signature is independently verified.
+- Confirm the release workflow attached wheel, source distribution, SPDX SBOM, and checksums, and recorded GitHub build provenance attestations.
 - Create labels, milestones, issues, and Project views from [Project Management](project-management.md).
 - Enable Discussions with Announcements, Ideas, Q&A, and Show and tell categories.
 - Enable private vulnerability reporting and branch protection for `main`.
 - Require CI and CodeQL checks, one approving review, conversation resolution, and linear history.
 - Add the repository description, homepage, and topics above.
 - Pin the release announcement, plugin-authoring discussion, and roadmap issue.
+
+This file is a preparation checklist. It does not assert that repository settings, labels, milestones, issues, Project views, Discussions, Wiki pages, or a release already exist.

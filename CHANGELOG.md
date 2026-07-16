@@ -4,17 +4,9 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 ## [Unreleased]
 
-### Fixed
+No unreleased changes.
 
-- Git collector integration tests now skip when the Git executable is unavailable instead of checking only whether `PATH` exists.
-- PowerShell bootstrap and verification scripts now stop immediately when a native command returns a nonzero exit code.
-- dependency audit commands now resolve the local project graph directly instead of looking up the unpublished editable package on PyPI.
-
-### Added
-
-- explicit coverage for the production behavior when Git is unavailable.
-
-## [1.0.0] - 2026-07-16
+## [1.0.0] - 2026-07-17
 
 ### Added
 
@@ -27,9 +19,29 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 - strict YAML configuration, JSON and Markdown export, and verified JSON import;
 - out-of-process language-neutral collector plugin protocol;
 - Typer CLI, loopback FastAPI service, OpenAPI schema, and local dashboard;
-- explicit two-key telemetry consent and exact-version PyPI updater;
+- explicit two-key telemetry consent and a disabled-by-default package-index updater interface;
 - Windows, Linux, and macOS CI, security scanning, Docker runtime, and release automation;
-- 71 automated tests with branch-aware coverage above 85 percent.
+- an automated branch-aware test suite with a required coverage threshold above 85 percent.
 
-[Unreleased]: https://github.com/envwitness/envwitness/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/envwitness/envwitness/releases/tag/v1.0.0
+### Security
+
+- executable discovery excludes implicit current-directory lookup and executes resolved absolute paths;
+- subprocess output is bounded while streaming, and process trees are terminated on timeout or cancellation with Windows Job Objects and POSIX process groups;
+- command arguments, working-directory metadata, project metadata, provenance, nested JSON keys, home-directory paths, and display controls pass through redaction before persistence;
+- Markdown renderers prevent raw HTML, code-span, table, and Unicode display-control injection;
+- archive and JSON readers reject duplicate keys, non-finite values, encrypted or duplicate members, decompression overflows, report mismatches, symlink swaps, and path-to-handle identity changes;
+- the loopback API validates Host headers against DNS rebinding, hides filesystem paths in errors, and rejects storage reparse points;
+- plugin processes use strict JSON, bounded streams, sanitized errors, and deterministic cleanup;
+- telemetry uses one bounded worker and rechecks consent before delivery;
+- release and continuous-integration Actions are pinned to verified immutable commit identifiers.
+
+### Operations
+
+- source and GitHub Release installation documentation for the initial public release;
+- reproducible release assets: wheel, source distribution, SPDX SBOM, SHA-256 checksums, and GitHub build provenance attestations;
+- Python 3.11, 3.12, and 3.13 coverage on Windows, Linux, and macOS, cross-platform wheel smoke tests, and a Linux container smoke test;
+- Docker Compose runs a one-shot capture job compatible with the loopback-only API security model;
+- package-index installation and updater documentation state that PyPI distribution is not part of the 1.0 release.
+
+[Unreleased]: https://github.com/nsergej/EnvWitness/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/nsergej/EnvWitness/releases/tag/v1.0.0

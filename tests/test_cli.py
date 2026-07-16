@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from typer.testing import CliRunner
@@ -7,7 +8,7 @@ from typer.testing import CliRunner
 from envwitness.infrastructure.archive import ZipCapsuleRepository
 from envwitness.infrastructure.telemetry import ConsentStore
 from envwitness.infrastructure.updater import UpdateStatus
-from envwitness.presentation.cli import app
+from envwitness.presentation.cli import _default_capsule_path, _format_url_host, app
 
 RUNNER = CliRunner()
 
@@ -16,6 +17,21 @@ def test_version_command() -> None:
     result = RUNNER.invoke(app, ["version"])
     assert result.exit_code == 0
     assert "EnvWitness 1.0.0" in result.stdout
+
+
+def test_capture_help_documents_trailing_command() -> None:
+    result = RUNNER.invoke(app, ["capture", "--help"])
+    assert result.exit_code == 0
+    assert "COMMAND" in result.stdout
+    assert "after --" in result.stdout
+
+
+def test_ipv6_dashboard_host_is_bracketed() -> None:
+    assert _format_url_host("::1") == "[::1]"
+
+
+def test_default_capsule_path_cannot_escape_through_project_name() -> None:
+    assert _default_capsule_path("../../customer project") == Path("customer-project.evw")
 
 
 def test_cli_capture_verify_export_and_import(project_directory: Path, tmp_path: Path) -> None:
@@ -34,10 +50,15 @@ def test_cli_capture_verify_export_and_import(project_directory: Path, tmp_path:
             str(project_directory),
             "--output",
             str(capsule_path),
+            "--",
+            sys.executable,
+            "-c",
+            "print('captured command')",
         ],
     )
     assert capture.exit_code == 0
     assert capsule_path.exists()
+    assert ZipCapsuleRepository().read(capsule_path).command.exit_code == 0
 
     verify = RUNNER.invoke(app, ["verify", str(capsule_path)])
     assert verify.exit_code == 0

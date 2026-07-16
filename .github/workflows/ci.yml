@@ -19,8 +19,8 @@ jobs:
     name: Quality and package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
           cache: pip
@@ -33,7 +33,7 @@ jobs:
       - run: python scripts/validate_repository.py
       - run: python -m pip_audit . --progress-spinner off
       - run: python -m build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: distributions
           path: dist/
@@ -46,12 +46,56 @@ jobs:
       fail-fast: false
       matrix:
         operating-system: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - run: python -m pip install -e ".[development]"
       - run: python -m pytest
+
+  package-smoke:
+    name: Wheel smoke / ${{ matrix.operating-system }}
+    needs: quality
+    runs-on: ${{ matrix.operating-system }}
+    strategy:
+      fail-fast: false
+      matrix:
+        operating-system: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: distributions
+          path: dist
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install built wheel
+        run: >-
+          python -c "from pathlib import Path; import subprocess, sys;
+          wheel = next(Path('dist').glob('*.whl'));
+          subprocess.run([sys.executable, '-m', 'pip', 'install', str(wheel)], check=True)"
+      - run: envwitness version
+      - run: envwitness --help
+
+  docker-smoke:
+    name: Container smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - run: docker build -f docker/Dockerfile -t envwitness:ci .
+      - run: docker run --rm envwitness:ci --help
+      - name: Capture and verify in the container
+        run: |
+          mkdir docker-smoke
+          chmod 0777 docker-smoke
+          docker run --rm --read-only --tmpfs /tmp \
+            -v "$PWD/docker-smoke:/workspace" \
+            envwitness:ci capture --project-root /workspace --output /workspace/smoke.evw
+          test -s docker-smoke/smoke.evw
+          docker run --rm --read-only --tmpfs /tmp \
+            -v "$PWD/docker-smoke:/workspace:ro" \
+            envwitness:ci verify /workspace/smoke.evw

@@ -6,7 +6,7 @@ EnvWitness handles developer environment evidence, which must be treated as pote
 
 - Do not collect identity, remote URLs, environment values, patches, or file contents by default.
 - Apply one deterministic redaction pass to every built-in, command, and plugin fact before persistence.
-- Detect modification of stored values and the manifest.
+- Detect corruption or modification not followed by resealing.
 - Reject malformed, traversing, encrypted, duplicate, oversized, or unexpected archive members.
 - Keep the bundled HTTP service on loopback and authenticate mutations.
 - Keep telemetry inert until two independent opt-in controls are enabled.
@@ -34,9 +34,9 @@ Redaction is not a proof that a document contains no secret. Unknown formats, en
 
 ## Integrity guarantees
 
-Each fact contains a SHA-256 digest of its stored, post-redaction JSON value. The capsule contains a SHA-256 digest over its canonical unsigned manifest. Verification detects accidental or deliberate changes after sealing.
+Each fact contains a SHA-256 digest of its stored, post-redaction JSON value. The capsule contains a SHA-256 digest over its canonical unsigned manifest. Verification detects corruption and changes that were not followed by resealing. Because the digests are unkeyed, anyone able to edit a capsule can recompute them.
 
-Integrity does not authenticate the reporting machine, collector, or person. Version 1.0 does not provide signatures, hardware attestation, or a chain of custody.
+Integrity does not authenticate the reporting machine, collector, or person. Version 1.0 does not provide signatures, hardware attestation, tamper-proof authenticity, or a chain of custody.
 
 ## Archive controls
 
@@ -60,7 +60,7 @@ The YAML schema rejects non-loopback hosts. Capsule names and storage paths are 
 
 Telemetry sends only allowlisted aggregate counters, operating-system family, and tool version. There is no installation identifier. Network failures are non-critical.
 
-Updates query only the canonical PyPI HTTPS metadata endpoint, validate versions with PEP 440 semantics, reject automatic pre-releases, and install one exact version through the active interpreter. Package-index and local Python trust still apply.
+The dormant updater queries only the canonical PyPI HTTPS metadata endpoint, validates versions with PEP 440 semantics, rejects automatic pre-releases, and installs one exact version through the active interpreter. EnvWitness 1.0 is not published there, so GitHub Release installation is manual. Package-index and local Python trust would apply if publishing is enabled in a future release.
 
 ## Reporting vulnerabilities
 

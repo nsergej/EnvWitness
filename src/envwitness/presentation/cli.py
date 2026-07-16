@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Annotated
 
@@ -14,7 +15,12 @@ from rich.console import Console
 from rich.table import Table
 
 from envwitness import __version__
-from envwitness.application.services import CaptureRequest, ComparisonService, ReportRenderer
+from envwitness.application.services import (
+    CaptureRequest,
+    ComparisonService,
+    ReportRenderer,
+    default_project_label,
+)
 from envwitness.domain.errors import EnvWitnessError
 from envwitness.infrastructure.archive import JsonCapsuleImporter, ZipCapsuleRepository
 from envwitness.infrastructure.bootstrap import build_capture_service
@@ -91,12 +97,8 @@ def initialize_configuration(
     CONSOLE.print(f"Created [bold]{path}[/bold]")
 
 
-@app.command(
-    "capture",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)
+@app.command("capture")
 def capture(
-    context: typer.Context,
     output: Annotated[
         Path | None,
         typer.Option("--output", "-o", help="Destination .evw archive."),
@@ -109,29 +111,38 @@ def capture(
         Path,
         typer.Option("--project-root", help="Project directory to inspect."),
     ] = Path("."),
+    command: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Command and arguments to run after --.",
+            metavar="COMMAND...",
+        ),
+    ] = None,
 ) -> None:
     """Capture evidence and optionally run the command following ``--``."""
     try:
         configuration = load_configuration(configuration_path)
         _apply_automatic_update_policy(configuration)
-        command = tuple(context.args)
-        if command and command[0] == "--":
-            command = command[1:]
+        captured_command = tuple(command or ())
         resolved_root = project_root.resolve(strict=True)
-        project_name = configuration.project_name.strip() or resolved_root.name
-        destination = output or Path(f"{project_name}.evw")
+        project_name = configuration.project_name.strip() or default_project_label(resolved_root)
+        destination = output or _default_capsule_path(project_name)
         request = CaptureRequest(
             project_root=resolved_root,
             destination=destination,
             project_name=project_name,
-            command=command,
+            command=captured_command,
             command_timeout_seconds=configuration.capture.command_timeout_seconds,
             maximum_output_bytes=configuration.capture.maximum_output_bytes,
             environment_value_allowlist=configuration.capture.environment_value_allowlist,
             file_content_allowlist=configuration.capture.file_content_allowlist,
             runtime_commands=tuple(probe.command for probe in configuration.capture.runtime_probes),
         )
-        capsule, final_path = asyncio.run(build_capture_service(configuration).capture(request))
+        capture_service = build_capture_service(configuration)
+        try:
+            capsule, final_path = asyncio.run(capture_service.capture(request))
+        finally:
+            capture_service.close()
     except (EnvWitnessError, OSError, ValueError) as error:
         _abort(error)
     CONSOLE.print(
@@ -282,7 +293,8 @@ def serve(
     except (EnvWitnessError, OSError, ValueError) as error:
         _abort(error)
     CONSOLE.print(
-        f"Dashboard: http://{configuration.api.host}:{configuration.api.port} "
+        f"Dashboard: http://{_format_url_host(configuration.api.host)}:"
+        f"{configuration.api.port} "
         "(mutations require a bearer token)"
     )
     uvicorn.run(
@@ -403,6 +415,19 @@ def _apply_automatic_update_policy(configuration: EnvWitnessConfiguration) -> No
         )
     elif result.checked:
         LOGGER.info("automatic_update_check_completed")
+
+
+def _format_url_host(host: str) -> str:
+    """Bracket an IPv6 host for display in an absolute URL."""
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]"
+    return host
+
+
+def _default_capsule_path(project_name: str) -> Path:
+    """Build a portable default archive name without interpreting path separators."""
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "-", project_name).strip(".-_")
+    return Path(f"{safe_stem or 'capture'}.evw")
 
 
 def _abort(error: Exception) -> None:

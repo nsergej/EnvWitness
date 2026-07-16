@@ -15,7 +15,7 @@ All commands support `--help`. Global `--verbose` enables diagnostic logs and `-
 | `envwitness serve` | Run the loopback REST API and dashboard. |
 | `envwitness telemetry` | Enable, disable, or inspect explicit consent. |
 | `envwitness plugins example` | Print protocol 1.0 request and response samples. |
-| `envwitness update` | Check or install a stable PyPI release. |
+| `envwitness update` | Package-index updater interface; inactive for the GitHub-only 1.0 distribution. |
 
 ## Capture
 
@@ -63,12 +63,7 @@ The service remains attached to the terminal and uses the configured loopback ho
 
 ## Updates
 
-```console
-envwitness update check --config envwitness.yml
-envwitness update install --version 1.0.1 --config envwitness.yml
-```
-
-The explicit install command accepts only a normalized stable version. Automatic policy is documented in [Configuration Reference](configuration.md#updates).
+EnvWitness 1.0 is not published on PyPI. Install reviewed versions from [GitHub Releases](installation.md) instead of invoking `envwitness update`. The commands remain in schema `1.0` for forward compatibility: they query only the fixed PyPI metadata endpoint and accept only normalized stable versions, but cannot discover this GitHub-only release.
 
 ## Exit behavior
 

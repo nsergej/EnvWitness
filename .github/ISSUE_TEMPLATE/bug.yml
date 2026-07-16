@@ -1,7 +1,7 @@
 name: Bug report
 description: Report reproducible incorrect behavior without disclosing secrets.
 title: "bug: "
-labels: []
+labels: ["type: bug"]
 body:
   - type: markdown
     attributes:

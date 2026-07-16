@@ -3,12 +3,169 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from envwitness.domain.errors import ConfigurationError
+from envwitness.domain.models import has_unsafe_control_characters
+
+
+@dataclass(slots=True)
+class _RegexGroupComplexity:
+    """Track ambiguity inside one regular-expression group."""
+
+    has_variable_repeat: bool = False
+    has_alternation: bool = False
+
+
+def validate_telemetry_endpoint(endpoint: str) -> str:
+    """Validate one optional HTTPS telemetry endpoint without URL ambiguity."""
+    if not endpoint:
+        return endpoint
+    if endpoint != endpoint.strip() or any(ord(character) < 32 for character in endpoint):
+        raise ValueError("Telemetry endpoint must be a valid HTTPS URL")
+    try:
+        parsed_endpoint = urlsplit(endpoint)
+        hostname = parsed_endpoint.hostname
+        _ = parsed_endpoint.port
+    except ValueError as error:
+        raise ValueError("Telemetry endpoint must be a valid HTTPS URL") from error
+    if (
+        parsed_endpoint.scheme.lower() != "https"
+        or not parsed_endpoint.netloc
+        or not hostname
+        or parsed_endpoint.username is not None
+        or parsed_endpoint.password is not None
+        or "#" in endpoint
+        or "\\" in parsed_endpoint.netloc
+        or any(character.isspace() for character in hostname)
+    ):
+        raise ValueError(
+            "Telemetry endpoint must use HTTPS with a hostname and no credentials or fragment"
+        )
+    return endpoint
+
+
+def _validate_redaction_pattern_complexity(pattern: str) -> None:  # noqa: PLR0912
+    """Reject constructs commonly responsible for catastrophic regex backtracking."""
+    if "(?P=" in pattern:
+        raise ValueError("Redaction expressions cannot contain backreferences")
+
+    groups = [_RegexGroupComplexity()]
+    closed_group: _RegexGroupComplexity | None = None
+    index = 0
+    quantifier_count = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "\\":
+            if index + 1 < len(pattern) and pattern[index + 1] in "123456789":
+                raise ValueError("Redaction expressions cannot contain backreferences")
+            index += 2
+            closed_group = None
+            continue
+        if character == "[":
+            index += 1
+            while index < len(pattern):
+                if pattern[index] == "\\":
+                    index += 2
+                    continue
+                if pattern[index] == "]":
+                    index += 1
+                    break
+                index += 1
+            closed_group = None
+            continue
+        if character == "(":
+            groups.append(_RegexGroupComplexity())
+            if len(groups) > 13:
+                raise ValueError("Redaction expressions cannot nest more than 12 groups")
+            closed_group = None
+            index += 1
+            if index < len(pattern) and pattern[index] == "?":
+                if pattern.startswith("?P<", index):
+                    name_end = pattern.find(">", index + 3)
+                    index = len(pattern) if name_end < 0 else name_end + 1
+                elif pattern.startswith(("?<=", "?<!"), index):
+                    index += 3
+                elif pattern.startswith(("?:", "?=", "?!", "?>"), index):
+                    index += 2
+                else:
+                    prefix_end = min(
+                        (
+                            position
+                            for position in (
+                                pattern.find(":", index + 1),
+                                pattern.find(")", index + 1),
+                            )
+                            if position >= 0
+                        ),
+                        default=-1,
+                    )
+                    if prefix_end >= 0 and pattern[prefix_end] == ":":
+                        index = prefix_end + 1
+            continue
+        if character == ")" and len(groups) > 1:
+            closed_group = groups.pop()
+            groups[-1].has_variable_repeat |= closed_group.has_variable_repeat
+            groups[-1].has_alternation |= closed_group.has_alternation
+            index += 1
+            continue
+        if character == "|":
+            groups[-1].has_alternation = True
+            closed_group = None
+            index += 1
+            continue
+
+        quantifier = _parse_regex_quantifier(pattern, index)
+        if quantifier is not None:
+            next_index, variable_repeat, maximum_repetitions = quantifier
+            quantifier_count += 1
+            if quantifier_count > 32:
+                raise ValueError("Redaction expressions cannot contain more than 32 quantifiers")
+            if maximum_repetitions is not None and maximum_repetitions > 1_000:
+                raise ValueError("Redaction expression repetition limit cannot exceed 1000")
+            repeats_group = maximum_repetitions is None or maximum_repetitions > 1
+            if (
+                closed_group is not None
+                and repeats_group
+                and (closed_group.has_variable_repeat or closed_group.has_alternation)
+            ):
+                raise ValueError(
+                    "Redaction expressions cannot repeat ambiguous or variably repeated groups"
+                )
+            groups[-1].has_variable_repeat |= variable_repeat
+            closed_group = None
+            index = next_index
+            continue
+
+        closed_group = None
+        index += 1
+
+
+def _parse_regex_quantifier(
+    pattern: str,
+    index: int,
+) -> tuple[int, bool, int | None] | None:
+    """Return the end, variability, and upper bound of a quantifier at an index."""
+    character = pattern[index]
+    if character in "*+":
+        return index + 1, True, None
+    if character == "?":
+        return index + 1, True, 1
+    if character != "{":
+        return None
+    match = re.match(r"\{(\d+)(?:,(\d*)?)?\}", pattern[index:])
+    if match is None:
+        return None
+    minimum = int(match.group(1))
+    maximum_text = match.group(2)
+    has_comma = "," in match.group(0)
+    maximum = None if has_comma and maximum_text == "" else int(maximum_text or minimum)
+    return index + len(match.group(0)), has_comma and maximum != minimum, maximum
 
 
 class RuntimeProbeConfiguration(BaseModel):
@@ -79,7 +236,8 @@ class RedactionRuleConfiguration(BaseModel):
     @field_validator("pattern")
     @classmethod
     def pattern_compiles(cls, pattern: str) -> str:
-        """Compile custom patterns during configuration loading."""
+        """Compile bounded custom patterns during configuration loading."""
+        _validate_redaction_pattern_complexity(pattern)
         try:
             re.compile(pattern)
         except re.error as error:
@@ -140,10 +298,8 @@ class TelemetryConfiguration(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def endpoint_requires_https(cls, endpoint: str) -> str:
-        """Require encrypted transport whenever an endpoint is configured."""
-        if endpoint and not endpoint.startswith("https://"):
-            raise ValueError("Telemetry endpoint must use HTTPS")
-        return endpoint
+        """Require an unambiguous encrypted endpoint whenever one is configured."""
+        return validate_telemetry_endpoint(endpoint)
 
 
 class UpdateConfiguration(BaseModel):
@@ -185,6 +341,14 @@ class EnvWitnessConfiguration(BaseModel):
     api: ApiConfiguration = ApiConfiguration()
     telemetry: TelemetryConfiguration = TelemetryConfiguration()
     updates: UpdateConfiguration = UpdateConfiguration()
+
+    @field_validator("project_name")
+    @classmethod
+    def project_name_is_display_safe(cls, project_name: str) -> str:
+        """Reject control characters before a project name reaches paths or displays."""
+        if has_unsafe_control_characters(project_name):
+            raise ValueError("Project name cannot contain control characters")
+        return project_name
 
     @field_validator("plugins")
     @classmethod

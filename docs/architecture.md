@@ -20,6 +20,8 @@ EnvWitness uses Clean Architecture boundaries with dependency direction toward t
 
 `src/envwitness/presentation` contains the Typer CLI, FastAPI service, and static local dashboard. It validates transport-specific inputs and delegates business decisions to application services.
 
+The external archive contract is documented in [Capsule and Report Format](report-format.md), and the supported import surface is documented in [Python API](python-api.md).
+
 ## Capture Sequence
 
 ```mermaid

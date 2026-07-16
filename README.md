@@ -11,9 +11,9 @@
 <p align="center"><strong>Proof-carrying, privacy-first bug reports for the "works on my machine" gap.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/envwitness/envwitness/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/envwitness/envwitness/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="https://pypi.org/project/envwitness/"><img alt="PyPI" src="https://img.shields.io/pypi/v/envwitness?style=flat-square"></a>
-  <a href="https://pypi.org/project/envwitness/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/envwitness?style=flat-square"></a>
+  <a href="https://github.com/nsergej/EnvWitness/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/nsergej/EnvWitness/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/nsergej/EnvWitness/releases"><img alt="GitHub release" src="https://img.shields.io/github/v/release/nsergej/EnvWitness?style=flat-square"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-3776ab?style=flat-square">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-087f73?style=flat-square"></a>
   <a href="SECURITY.md"><img alt="Security policy" src="https://img.shields.io/badge/security-policy-b4232c?style=flat-square"></a>
   <img alt="Telemetry opt-in" src="https://img.shields.io/badge/telemetry-opt--in%20only-b96509?style=flat-square">
@@ -27,10 +27,10 @@ EnvWitness turns those facts into a small `.evw` capsule. Every fact carries pro
 
 ```console
 $ envwitness capture --output working.evw -- python -m pytest
-Captured 24 facts to working.evw
+Captured environment evidence to working.evw
 
 $ envwitness capture --output failing.evw -- python -m pytest
-Captured 24 facts to failing.evw
+Captured environment evidence to failing.evw
 
 $ envwitness compare working.evw failing.evw
 RUNTIME_DRIFT          Align runtime versions first
@@ -67,35 +67,39 @@ Ordinary support archives gather files. EnvWitness models diagnostic disclosure 
 
 ## Installation
 
-### pipx
+### GitHub Release
 
 ```bash
-pipx install envwitness
+pipx install https://github.com/nsergej/EnvWitness/releases/download/v1.0.0/envwitness-1.0.0-py3-none-any.whl
 ```
 
-### uv
+The release page also contains the source distribution, SPDX SBOM, SHA-256 checksums, and a GitHub build provenance attestation. Verify downloaded files as described in [Installation](docs/installation.md).
+
+### Git tag
 
 ```bash
-uv tool install envwitness
+pipx install "git+https://github.com/nsergej/EnvWitness.git@v1.0.0"
 ```
 
 ### Source
 
 ```bash
-git clone https://github.com/envwitness/envwitness.git
-cd envwitness
+git clone https://github.com/nsergej/EnvWitness.git
+cd EnvWitness
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate
-python -m pip install -e ".[development]"
+python -m pip install -e .
 ```
 
 ### Docker
 
 ```bash
 docker build -f docker/Dockerfile -t envwitness:1.0.0 .
-docker run --rm -v "$PWD:/workspace" envwitness:1.0.0 capture --project-root /workspace --output /workspace/capture.evw
+docker run --rm --read-only --tmpfs /tmp -v "$PWD:/workspace" envwitness:1.0.0 capture --project-root /workspace --output /workspace/capture.evw
 ```
+
+EnvWitness 1.0 is distributed through GitHub Releases and source tags, not PyPI. See [Installation](docs/installation.md) for PowerShell commands, checksum verification, and isolated development setup.
 
 ## Quick Start
 
@@ -141,7 +145,7 @@ Ask reporters for one command:
 envwitness capture --output issue-123.evw -- your-command --with-arguments
 ```
 
-The maintainer can run `envwitness verify`, inspect `CAPSULE.md` without extraction, and compare it with a known-good capsule.
+The maintainer can run `envwitness verify`, inspect the generated report without extracting the archive, and compare it with a known-good capsule. Verification detects changes that were not followed by resealing; it is not a signature or proof of origin.
 
 ### CI failure evidence
 
@@ -149,7 +153,7 @@ The maintainer can run `envwitness verify`, inspect `CAPSULE.md` without extract
 - name: Capture failure evidence
   if: failure()
   run: envwitness capture --output ci-failure.evw
-- uses: actions/upload-artifact@v4
+- uses: actions/upload-artifact@v7
   if: failure()
   with:
     name: envwitness
@@ -208,15 +212,9 @@ plugins:
 telemetry:
   enabled: false
   endpoint: ""
-
-updates:
-  automatic_check: false
-  automatic_install: false
-  metadata_url: https://pypi.org/pypi/envwitness/json
-  check_interval_hours: 24
 ```
 
-See [Configuration Reference](docs/configuration.md) for every field and threat boundary.
+See [Configuration Reference](docs/configuration.md) for every field and threat boundary. The complete workflow guide is in [Usage](docs/usage.md).
 
 ## Architecture
 
@@ -234,7 +232,7 @@ flowchart LR
 
 Dependencies point inward. The domain contains evidence and integrity rules. Application services coordinate use cases through protocols. Infrastructure implements collection, redaction, archives, telemetry, and updates. Presentation owns CLI, HTTP, and browser concerns.
 
-Read the [Architecture](docs/architecture.md), [Security Model](docs/security-model.md), and [Architecture Decision Records](docs/decisions.md).
+Read the [Architecture](docs/architecture.md), [Security Model](docs/security-model.md), [Security Audit](docs/security-audit.md), [Privacy Guide](docs/privacy.md), [Capsule Format](docs/report-format.md), and [Architecture Decision Records](docs/decisions.md).
 
 ## Plugin Protocol
 
@@ -270,7 +268,7 @@ The local API binds only to loopback addresses accepted by the configuration sch
 | `POST` | `/api/v1/capture` | Bearer token | Create a capsule |
 | `POST` | `/api/v1/compare` | None | Compare two stored capsules |
 
-Interactive OpenAPI documentation is served at `/api/docs`. See [API Reference](docs/api-reference.md) for request and response models.
+Interactive OpenAPI documentation is served at `/api/docs`. See [API Reference](docs/api-reference.md) for request and response models, authentication, limits, and error behavior.
 
 ## Import and Export
 
@@ -288,18 +286,11 @@ Telemetry is off by default and requires two independent choices:
 1. `envwitness telemetry enable` stores local consent.
 2. Project configuration must set `telemetry.enabled: true` and an HTTPS endpoint.
 
-Only allowlisted counts, operating system family, and EnvWitness version can be sent. Capsules, commands, paths, project names, collector values, and stable installation identifiers are never included. Consent can be withdrawn immediately with `envwitness telemetry disable`.
+Only allowlisted counts, operating system family, and EnvWitness version can be sent. Capsules, commands, paths, project names, collector values, and stable installation identifiers are never included. Consent can be withdrawn with `envwitness telemetry disable`. See [Privacy](docs/privacy.md) for the complete data inventory and review checklist.
 
 ## Updates
 
-Checks use the canonical PyPI HTTPS metadata endpoint. Installation pins the exact normalized stable version:
-
-```bash
-envwitness update check
-envwitness update install --version 1.0.1
-```
-
-Automatic checking and installation are disabled by default. When explicitly enabled, `capture` and `serve` check only after the configured interval; failures are logged without blocking the requested command. Pre-release and development versions are rejected by automatic installation.
+EnvWitness 1.0 does not publish a PyPI package, so its package-index updater is intentionally not an installation path for this release. Install a reviewed GitHub Release wheel or an exact Git tag. Automatic checking and installation remain disabled by default; the dormant updater configuration is retained for schema compatibility and a future package-index release.
 
 ## Roadmap
 
@@ -315,7 +306,7 @@ The detailed plan lives in [Roadmap](docs/roadmap.md).
 
 ### Is a verified capsule proof that the reporting machine is trustworthy?
 
-No. Integrity proves that stored evidence has not changed since sealing. It does not provide hardware attestation or prove that a collector was honest.
+No. Integrity detects stored evidence changed without being resealed. Anyone who can modify a capsule can also recompute its ordinary SHA-256 digests. Version 1.0 does not provide signatures, hardware attestation, chain of custody, or proof that a collector was honest.
 
 ### Does EnvWitness guarantee that every secret is removed?
 
@@ -335,7 +326,7 @@ No. There is no upload command in `1.0`. Sharing remains an explicit operator ac
 
 ### Which operating systems are supported?
 
-Windows, Linux, and macOS with Python 3.11 or newer. CI tests all three families.
+Windows, Linux, and macOS with Python 3.11, 3.12, or 3.13. CI tests every supported version on all three operating-system families.
 
 ## Contributing
 
@@ -343,7 +334,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [Code of Conduct](CODE_OF_CON
 
 ## Security
 
-Please do not report suspected secret exposure in a public issue. Follow [SECURITY.md](SECURITY.md). The complete trust model and known limitations are documented in [docs/security-model.md](docs/security-model.md).
+Please do not report suspected secret exposure in a public issue. Follow [SECURITY.md](SECURITY.md). The complete trust model and known limitations are documented in [docs/security-model.md](docs/security-model.md); the pre-release review and remediation record is in [docs/security-audit.md](docs/security-audit.md).
 
 ## License
 

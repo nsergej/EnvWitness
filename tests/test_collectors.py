@@ -78,6 +78,30 @@ def test_file_collector_rejects_binary_allowlist(project_directory: Path) -> Non
         )
 
 
+def test_file_collector_rejects_path_identity_change(
+    project_directory: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    allowed_file = project_directory / "diagnostic.yml"
+    replacement_file = project_directory / "replacement.yml"
+    allowed_file.write_text("mode: original\n", encoding="utf-8")
+    replacement_file.write_text("mode: replacement\n", encoding="utf-8")
+    original_resolve = Path.resolve
+
+    def resolve_with_changed_identity(path: Path, strict: bool = False) -> Path:
+        if path == allowed_file:
+            return original_resolve(replacement_file, strict=strict)
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", resolve_with_changed_identity)
+    with pytest.raises(CaptureError, match="changed while"):
+        asyncio.run(
+            FileFingerprintCollector().collect(
+                context(project_directory, file_content_allowlist=("diagnostic.yml",))
+            )
+        )
+
+
 def test_runtime_collector_reports_available_and_missing(project_directory: Path) -> None:
     probes = (
         RuntimeProbeConfiguration(name="python", command=(sys.executable, "--version")),
@@ -139,7 +163,13 @@ def test_git_collector_reports_unavailable(
     project_directory: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("envwitness.infrastructure.collectors.shutil.which", lambda _: None)
+    def unavailable_executable(*_args: object, **_kwargs: object) -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(
+        "envwitness.infrastructure.collectors.resolve_executable",
+        unavailable_executable,
+    )
     facts = asyncio.run(GitCollector().collect(context(project_directory)))
     values = {fact.key: fact.value for fact in facts}
     assert values == {"git.available": False}

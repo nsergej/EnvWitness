@@ -12,11 +12,11 @@ Thank you for improving diagnostic evidence for everyone. Contributions are welc
 
 ## Development Setup
 
-Python 3.11 or newer and Git are required.
+Python 3.11, 3.12, or 3.13 and Git are required.
 
 ```bash
-git clone https://github.com/envwitness/envwitness.git
-cd envwitness
+git clone https://github.com/nsergej/EnvWitness.git
+cd EnvWitness
 python -m venv .venv
 ```
 
@@ -53,6 +53,7 @@ python -m build
 ```
 
 On Windows, `scripts/verify.ps1` runs the complete local gate. On Linux and macOS, use `scripts/verify.sh`.
+Build and installation details are maintained in [BUILDING.md](BUILDING.md).
 
 ## Design Rules
 

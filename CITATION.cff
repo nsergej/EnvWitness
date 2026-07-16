@@ -5,7 +5,7 @@ type: software
 version: 1.0.0
 date-released: 2026-07-16
 license: Apache-2.0
-repository-code: "https://github.com/envwitness/envwitness"
-url: "https://github.com/envwitness/envwitness"
+repository-code: "https://github.com/nsergej/EnvWitness"
+url: "https://github.com/nsergej/EnvWitness"
 authors:
-  - name: "EnvWitness Contributors"
+  - name: "nsergej"

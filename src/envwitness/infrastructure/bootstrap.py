@@ -24,7 +24,17 @@ from envwitness.infrastructure.telemetry import (
 )
 
 
-def build_capture_service(configuration: EnvWitnessConfiguration) -> CaptureService:
+class ManagedCaptureService(CaptureService):
+    """Capture service with an explicit lifecycle for aggregate telemetry."""
+
+    _managed_telemetry: AggregateTelemetryClient
+
+    def close(self, *, drain_telemetry: bool = True) -> None:
+        """Drain and close the owned telemetry worker within its bounded timeout."""
+        self._managed_telemetry.close(drain=drain_telemetry)
+
+
+def build_capture_service(configuration: EnvWitnessConfiguration) -> ManagedCaptureService:
     """Build the production capture service from validated configuration."""
     collector_list: list[EvidenceCollector] = [
         SystemCollector(),
@@ -41,7 +51,7 @@ def build_capture_service(configuration: EnvWitnessConfiguration) -> CaptureServ
         endpoint=configuration.telemetry.endpoint if configuration.telemetry.enabled else "",
         tool_version=__version__,
     )
-    return CaptureService(
+    service = ManagedCaptureService(
         collectors=tuple(collector_list),
         redactor=DeterministicRedactor(configuration.redaction.custom_rules),
         command_runner=AsyncCommandRunner(),
@@ -49,3 +59,5 @@ def build_capture_service(configuration: EnvWitnessConfiguration) -> CaptureServ
         tool_version=__version__,
         telemetry=telemetry,
     )
+    service._managed_telemetry = telemetry
+    return service

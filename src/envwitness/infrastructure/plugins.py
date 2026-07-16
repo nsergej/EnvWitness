@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from pathlib import Path
@@ -14,6 +13,7 @@ from envwitness.application.ports import CaptureContext, CollectedFact
 from envwitness.domain.errors import PluginError
 from envwitness.domain.models import Sensitivity, utc_now
 from envwitness.infrastructure.config import PluginConfiguration
+from envwitness.infrastructure.processes import run_bounded_process
 
 
 class PluginFactPayload(BaseModel):
@@ -59,42 +59,41 @@ class ProcessPluginCollector:
             "metadata": context.metadata,
         }
         environment = self._sanitized_environment()
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *self._configuration.command,
-                cwd=context.project_root,
-                env=environment,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except (FileNotFoundError, OSError) as error:
-            raise PluginError(f"Cannot start plugin {self._configuration.name}: {error}") from error
-
+        maximum_output_bytes = min(
+            self._configuration.maximum_output_bytes,
+            context.maximum_output_bytes,
+        )
         encoded_request = json.dumps(request_payload, sort_keys=True).encode("utf-8")
         try:
-            standard_output, standard_error = await asyncio.wait_for(
-                process.communicate(encoded_request),
-                timeout=self._configuration.timeout_seconds,
+            result = await run_bounded_process(
+                self._configuration.command,
+                working_directory=context.project_root,
+                timeout_seconds=self._configuration.timeout_seconds,
+                maximum_standard_output_bytes=maximum_output_bytes,
+                maximum_standard_error_bytes=min(maximum_output_bytes, 4_096),
+                input_bytes=encoded_request,
+                environment=environment,
+                terminate_on_output_limit=True,
             )
-        except TimeoutError as error:
-            process.kill()
-            await process.wait()
-            raise PluginError(f"Plugin timed out: {self._configuration.name}") from error
-
-        if len(standard_output) > self._configuration.maximum_output_bytes:
+        except (FileNotFoundError, OSError, ValueError) as error:
+            raise PluginError(f"Cannot start plugin {self._configuration.name}: {error}") from error
+        if result.timed_out:
+            raise PluginError(f"Plugin timed out: {self._configuration.name}")
+        if result.output_limit_exceeded:
             raise PluginError(f"Plugin output exceeds its limit: {self._configuration.name}")
-        if process.returncode != 0:
-            bounded_error = standard_error[:4_096].decode("utf-8", errors="replace")
-            raise PluginError(
-                f"Plugin {self._configuration.name} exited with {process.returncode}: "
-                f"{bounded_error}"
-            )
+        if result.return_code != 0:
+            raise PluginError(f"Plugin {self._configuration.name} exited with {result.return_code}")
         try:
-            response = PluginResponse.model_validate_json(standard_output)
-        except ValidationError as error:
+            decoded_output = result.standard_output.decode("utf-8", errors="strict")
+            raw_response: object = json.loads(
+                decoded_output,
+                object_pairs_hook=_reject_duplicate_object_keys,
+                parse_constant=_reject_non_finite_number,
+            )
+            response = PluginResponse.model_validate(raw_response)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError) as error:
             raise PluginError(
-                f"Plugin {self._configuration.name} returned an invalid response: {error}"
+                f"Plugin {self._configuration.name} returned an invalid response"
             ) from error
 
         required_prefix = f"plugin.{self._configuration.name}."
@@ -136,7 +135,29 @@ class ProcessPluginCollector:
             "TMPDIR",
             "WINDIR",
         )
-        return {name: os.environ[name] for name in allowed_names if name in os.environ}
+        environment = {name: os.environ[name] for name in allowed_names if name in os.environ}
+        if "PATH" in environment:
+            environment["PATH"] = os.pathsep.join(
+                entry
+                for entry in environment["PATH"].split(os.pathsep)
+                if entry and Path(entry).is_absolute()
+            )
+        return environment
+
+
+def _reject_duplicate_object_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Build a JSON object while rejecting ambiguous duplicate member names."""
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_non_finite_number(value: str) -> None:
+    """Reject non-standard JSON constants such as NaN and Infinity."""
+    raise ValueError(f"Non-finite JSON number is not allowed: {value}")
 
 
 def enabled_plugin_collectors(

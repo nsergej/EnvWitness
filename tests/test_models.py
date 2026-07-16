@@ -78,3 +78,11 @@ def test_capsule_rejects_duplicate_fact_keys(sample_fact: EvidenceFact) -> None:
                 replacements=0,
             ),
         )
+
+
+def test_capsule_rejects_control_characters_in_project_labels(sample_capsule: Capsule) -> None:
+    payload = sample_capsule.model_dump()
+    payload["project_name"] = "unsafe\u202ename"
+
+    with pytest.raises(ValidationError, match="control characters"):
+        Capsule.model_validate(payload)

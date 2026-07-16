@@ -9,7 +9,7 @@ description = "Proof-carrying, privacy-first bug reports for comparing working a
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
-authors = [{ name = "EnvWitness Contributors" }]
+authors = [{ name = "nsergej" }]
 keywords = [
   "bug-report",
   "diagnostics",
@@ -67,10 +67,10 @@ development = [
 envwitness = "envwitness.presentation.cli:run"
 
 [project.urls]
-Documentation = "https://github.com/envwitness/envwitness/tree/main/docs"
-Issues = "https://github.com/envwitness/envwitness/issues"
-Repository = "https://github.com/envwitness/envwitness"
-Security = "https://github.com/envwitness/envwitness/security/policy"
+Documentation = "https://github.com/nsergej/EnvWitness/tree/main/docs"
+Issues = "https://github.com/nsergej/EnvWitness/issues"
+Repository = "https://github.com/nsergej/EnvWitness"
+Security = "https://github.com/nsergej/EnvWitness/security/policy"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/envwitness"]
