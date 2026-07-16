@@ -1,0 +1,136 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "envwitness"
+version = "1.0.0"
+description = "Proof-carrying, privacy-first bug reports for comparing working and failing developer environments."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "EnvWitness Contributors" }]
+keywords = [
+  "bug-report",
+  "diagnostics",
+  "developer-tools",
+  "devops",
+  "environment-drift",
+  "incident-response",
+  "privacy",
+  "reproducibility",
+  "support-bundle",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Environment :: Web Environment",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Bug Tracking",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = [
+  "fastapi>=0.115,<1",
+  "packaging>=24.2,<27",
+  "pydantic>=2.10,<3",
+  "pyyaml>=6.0.2,<7",
+  "rich>=13.9,<15",
+  "typer>=0.15,<1",
+  "uvicorn>=0.32,<1",
+]
+
+[project.optional-dependencies]
+development = [
+  "bandit[toml]>=1.8,<2",
+  "build>=1.2,<2",
+  "httpx>=0.28,<1",
+  "mypy>=1.14,<2",
+  "pillow>=11,<13",
+  "pip-audit>=2.7,<3",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=6,<8",
+  "ruff>=0.9,<1",
+  "setuptools>=83",
+  "types-pyyaml>=6.0.12,<7",
+]
+
+[project.scripts]
+envwitness = "envwitness.presentation.cli:run"
+
+[project.urls]
+Documentation = "https://github.com/envwitness/envwitness/tree/main/docs"
+Issues = "https://github.com/envwitness/envwitness/issues"
+Repository = "https://github.com/envwitness/envwitness"
+Security = "https://github.com/envwitness/envwitness/security/policy"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/envwitness"]
+
+[tool.hatch.build]
+include = [
+  "src/envwitness/**/*.py",
+  "src/envwitness/presentation/static/*",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --cov=envwitness --cov-report=term-missing --cov-fail-under=85"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["envwitness"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["A", "ASYNC", "B", "BLE", "C4", "D", "E", "F", "I", "N", "PERF", "PIE", "PL", "RUF", "S", "SIM", "T20", "TRY", "UP"]
+ignore = [
+  "D203",
+  "D213",
+  "PLR0913",
+  "PLR0915",
+  "PLR2004",
+  "S105",
+  "TRY003",
+  "TRY301",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D", "S101", "S104", "S607", "PLR2004"]
+"examples/**/*.py" = ["T201"]
+"scripts/**/*.py" = ["T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+plugins = ["pydantic.mypy"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+skips = ["B404"]

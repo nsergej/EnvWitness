@@ -1,0 +1,31 @@
+name: Plugin proposal
+description: Propose a collector that follows the process protocol.
+title: "plugin: "
+labels: ["area: plugins", "type: feature"]
+body:
+  - type: input
+    id: ecosystem
+    attributes:
+      label: Tool or ecosystem
+    validations:
+      required: true
+  - type: textarea
+    id: facts
+    attributes:
+      label: Proposed facts
+      description: List semantic keys, provenance, sensitivity, and why each fact helps diagnosis.
+    validations:
+      required: true
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Data excluded by default
+      description: Identify credentials, identity, source, URLs, or operational data that must not be collected.
+    validations:
+      required: true
+  - type: textarea
+    id: platforms
+    attributes:
+      label: Platform and failure coverage
+    validations:
+      required: true

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description">
+  <title id="title">EnvWitness logo</title>
+  <desc id="description">A layered evidence trail resolving into a fingerprint.</desc>
+  <rect width="128" height="128" fill="#1e2932" rx="8"/>
+  <path d="M19 28h52l13 13-13 13H19L6 41z" fill="#ffffff" opacity=".12"/>
+  <path d="M19 50h45l13 13-13 13H19L6 63z" fill="#087f73" opacity=".58"/>
+  <path d="M19 72h38l13 13-13 13H19L6 85z" fill="#ffffff" opacity=".18"/>
+  <path d="M21 41h47M21 63h40M21 85h33" fill="none" stroke="#f7fafb" stroke-width="4" stroke-linecap="square"/>
+  <path d="M69 41l17 22-17 22" fill="none" stroke="#d99a3f" stroke-width="4"/>
+  <g fill="none" stroke="#54c7ba" stroke-linecap="round">
+    <path d="M96 35c15 2 24 14 24 29 0 12-5 19-9 28" stroke-width="4"/>
+    <path d="M94 44c10 1 17 10 17 20 0 10-5 17-8 25" stroke-width="4"/>
+    <path d="M92 53c6 1 10 5 10 11 0 8-5 13-7 20" stroke-width="4"/>
+    <path d="M92 63c0 9-4 15-6 22" stroke-width="4"/>
+  </g>
+  <circle cx="88" cy="63" r="5" fill="#ffffff"/>
+</svg>

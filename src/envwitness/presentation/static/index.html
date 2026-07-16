@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>EnvWitness</title>
+    <link rel="stylesheet" href="/static/styles.css?v=1.0.0">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="EnvWitness dashboard">
+        <span class="brand-mark" aria-hidden="true">EW</span>
+        <span>EnvWitness</span>
+      </a>
+      <div class="health" id="health" role="status">
+        <span class="health-dot" aria-hidden="true"></span>
+        Connecting
+      </div>
+    </header>
+
+    <main>
+      <section class="summary-band" aria-labelledby="summary-title">
+        <div>
+          <p class="eyebrow">Local evidence workspace</p>
+          <h1 id="summary-title">Environment drift, with receipts.</h1>
+          <p class="summary-copy">
+            Compare verified capsules. Captured evidence stays on this machine.
+          </p>
+        </div>
+        <dl class="metrics" aria-label="Capsule summary">
+          <div>
+            <dt>Capsules</dt>
+            <dd id="capsule-count">0</dd>
+          </div>
+          <div>
+            <dt>Facts</dt>
+            <dd id="fact-count">0</dd>
+          </div>
+          <div>
+            <dt>Redacted</dt>
+            <dd id="redacted-count">0</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="workspace" aria-label="Diagnostic workspace">
+        <aside class="capsule-list-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Evidence store</p>
+              <h2>Capsules</h2>
+            </div>
+            <button type="button" class="icon-button" id="refresh" title="Refresh capsules" aria-label="Refresh capsules">&#8635;</button>
+          </div>
+          <div id="capsule-list" class="capsule-list" aria-live="polite"></div>
+        </aside>
+
+        <div class="comparison-panel">
+          <div class="section-heading comparison-heading">
+            <div>
+              <p class="eyebrow">Semantic comparison</p>
+              <h2>Working vs failing</h2>
+            </div>
+            <button type="button" id="compare" class="primary-button">Compare</button>
+          </div>
+
+          <div class="selectors">
+            <label>
+              <span>Baseline</span>
+              <select id="baseline" aria-label="Known working capsule"></select>
+            </label>
+            <label>
+              <span>Candidate</span>
+              <select id="candidate" aria-label="Failing capsule"></select>
+            </label>
+          </div>
+
+          <div id="empty-state" class="empty-state">
+            <strong>Select two capsules</strong>
+            <span>EnvWitness ranks source, runtime, dependency, and command drift.</span>
+          </div>
+
+          <div id="results" class="results" hidden>
+            <div id="hints" class="hints"></div>
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Severity</th>
+                    <th>Evidence key</th>
+                    <th>Change</th>
+                    <th>Baseline</th>
+                    <th>Candidate</th>
+                  </tr>
+                </thead>
+                <tbody id="differences"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js?v=1.0.0" defer></script>
+  </body>
+</html>

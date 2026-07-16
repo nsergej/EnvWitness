@@ -1,0 +1,37 @@
+schema_version: "1.0"
+project_name: ""
+
+capture:
+  command_timeout_seconds: 300
+  maximum_output_bytes: 1048576
+  include_environment_names: true
+  environment_value_allowlist: []
+  file_content_allowlist: []
+  runtime_probes:
+    - name: python
+      command: [python, --version]
+      timeout_seconds: 5
+    - name: git
+      command: [git, --version]
+      timeout_seconds: 5
+
+redaction:
+  custom_rules: []
+
+plugins: []
+
+api:
+  host: 127.0.0.1
+  port: 8765
+  token_environment_variable: ENVWITNESS_API_TOKEN
+  storage_directory: .envwitness/capsules
+
+telemetry:
+  enabled: false
+  endpoint: ""
+
+updates:
+  automatic_check: false
+  automatic_install: false
+  metadata_url: https://pypi.org/pypi/envwitness/json
+  check_interval_hours: 24

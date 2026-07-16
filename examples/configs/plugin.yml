@@ -1,0 +1,36 @@
+schema_version: "1.0"
+project_name: plugin-example
+
+capture:
+  command_timeout_seconds: 60
+  maximum_output_bytes: 262144
+  include_environment_names: true
+  environment_value_allowlist: []
+  file_content_allowlist: []
+  runtime_probes: []
+
+redaction:
+  custom_rules: []
+
+plugins:
+  - name: runtime-inventory
+    command: [python, examples/plugins/runtime_inventory.py]
+    enabled: true
+    timeout_seconds: 10
+    maximum_output_bytes: 65536
+
+api:
+  host: 127.0.0.1
+  port: 8765
+  token_environment_variable: ENVWITNESS_API_TOKEN
+  storage_directory: .envwitness/capsules
+
+telemetry:
+  enabled: false
+  endpoint: ""
+
+updates:
+  automatic_check: false
+  automatic_install: false
+  metadata_url: https://pypi.org/pypi/envwitness/json
+  check_interval_hours: 24

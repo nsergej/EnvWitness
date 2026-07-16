@@ -1,0 +1,166 @@
+"""Deterministic global redaction for all built-in and plugin evidence."""
+
+from __future__ import annotations
+
+import re
+from collections import Counter
+from dataclasses import dataclass
+
+from pydantic import JsonValue
+
+from envwitness.application.ports import CollectedFact
+from envwitness.domain.models import EvidenceFact, RedactionSummary, Sensitivity
+from envwitness.infrastructure.config import RedactionRuleConfiguration
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledRedactionRule:
+    """Named compiled expression used by the deterministic redaction pass."""
+
+    name: str
+    expression: re.Pattern[str]
+
+
+BUILT_IN_RULES = (
+    CompiledRedactionRule(
+        "private-key",
+        re.compile(
+            r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?"
+            r"-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"
+        ),
+    ),
+    CompiledRedactionRule(
+        "authorization-header",
+        re.compile(r"(?i)\b(authorization\s*[:=]\s*)(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]+"),
+    ),
+    CompiledRedactionRule("github-token", re.compile(r"\b(?:gh[opurs]_[A-Za-z0-9]{20,255})\b")),
+    CompiledRedactionRule("openai-key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,255}\b")),
+    CompiledRedactionRule("aws-access-key", re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")),
+    CompiledRedactionRule(
+        "jwt",
+        re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    ),
+    CompiledRedactionRule(
+        "credential-url",
+        re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^\s:/@]+:)[^\s/@]+(@)"),
+    ),
+    CompiledRedactionRule(
+        "sensitive-assignment",
+        re.compile(
+            r"(?i)\b(password|passwd|secret|client_secret|access_token|api_key|apikey)"
+            r"(\s*[:=]\s*)([^\s,;\]\}\"']+)"
+        ),
+    ),
+)
+
+
+class DeterministicRedactor:
+    """Apply transparent rules recursively before any evidence is persisted."""
+
+    def __init__(self, custom_rules: tuple[RedactionRuleConfiguration, ...] = ()) -> None:
+        """Compile built-in and validated operator-provided rules."""
+        compiled_custom_rules = tuple(
+            CompiledRedactionRule(rule.name, re.compile(rule.pattern)) for rule in custom_rules
+        )
+        self._rules = BUILT_IN_RULES + compiled_custom_rules
+
+    def redact(
+        self,
+        facts: list[CollectedFact],
+    ) -> tuple[list[EvidenceFact], RedactionSummary]:
+        """Redact every fact recursively and summarize all replacements."""
+        stored_facts: list[EvidenceFact] = []
+        rule_counts: Counter[str] = Counter()
+        redacted_fact_count = 0
+        total_replacements = 0
+
+        for fact in facts:
+            triggered_rules: tuple[str, ...]
+            if fact.sensitivity is Sensitivity.SECRET:
+                stored_value: JsonValue = "[REDACTED:secret-classification]"
+                triggered_rules = ("secret-classification",)
+                replacements = 1
+            else:
+                stored_value, triggered_rules, replacements = self._redact_value(fact.value)
+            was_redacted = replacements > 0
+            if was_redacted:
+                redacted_fact_count += 1
+                total_replacements += replacements
+                rule_counts.update(triggered_rules)
+            stored_facts.append(
+                EvidenceFact.create(
+                    key=fact.key,
+                    value=stored_value,
+                    collector=fact.collector,
+                    source=fact.source,
+                    sensitivity=fact.sensitivity,
+                    captured_at=fact.captured_at,
+                    redacted=was_redacted,
+                    redaction_rules=tuple(sorted(set(triggered_rules))) if was_redacted else (),
+                )
+            )
+
+        summary = RedactionSummary(
+            facts_scanned=len(facts),
+            facts_redacted=redacted_fact_count,
+            replacements=total_replacements,
+            rules_triggered=dict(sorted(rule_counts.items())),
+        )
+        return stored_facts, summary
+
+    def _redact_value(self, value: JsonValue) -> tuple[JsonValue, tuple[str, ...], int]:
+        """Recursively redact strings while preserving JSON structure and types."""
+        if isinstance(value, str):
+            return self._redact_text(value)
+        if isinstance(value, list):
+            redacted_items: list[JsonValue] = []
+            triggered_rules: list[str] = []
+            replacements = 0
+            for item in value:
+                redacted_item, item_rules, item_replacements = self._redact_value(item)
+                redacted_items.append(redacted_item)
+                triggered_rules.extend(item_rules)
+                replacements += item_replacements
+            return redacted_items, tuple(triggered_rules), replacements
+        if isinstance(value, dict):
+            redacted_mapping: dict[str, JsonValue] = {}
+            triggered_rules = []
+            replacements = 0
+            for key, item in value.items():
+                redacted_item, item_rules, item_replacements = self._redact_value(item)
+                redacted_mapping[key] = redacted_item
+                triggered_rules.extend(item_rules)
+                replacements += item_replacements
+            return redacted_mapping, tuple(triggered_rules), replacements
+        return value, (), 0
+
+    def _redact_text(self, value: str) -> tuple[str, tuple[str, ...], int]:
+        """Apply each named rule and retain useful non-secret surrounding context."""
+        redacted_value = value
+        triggered_rules: list[str] = []
+        replacements = 0
+        for rule in self._rules:
+
+            def replace_match(match: re.Match[str], rule_name: str = rule.name) -> str:
+                """Replace one regex match while retaining rule-specific context."""
+                return self._replacement(match, rule_name)
+
+            redacted_value, replacement_count = rule.expression.subn(
+                replace_match,
+                redacted_value,
+            )
+            if replacement_count:
+                triggered_rules.extend([rule.name] * replacement_count)
+                replacements += replacement_count
+        return redacted_value, tuple(triggered_rules), replacements
+
+    @staticmethod
+    def _replacement(match: re.Match[str], rule_name: str) -> str:
+        """Preserve safe prefixes for structured credential patterns."""
+        if rule_name == "authorization-header":
+            return f"{match.group(1)}[REDACTED:{rule_name}]"
+        if rule_name == "credential-url":
+            return f"{match.group(1)}[REDACTED:{rule_name}]{match.group(2)}"
+        if rule_name == "sensitive-assignment":
+            return f"{match.group(1)}{match.group(2)}[REDACTED:{rule_name}]"
+        return f"[REDACTED:{rule_name}]"
