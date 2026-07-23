@@ -16,7 +16,7 @@ RUNNER = CliRunner()
 def test_version_command() -> None:
     result = RUNNER.invoke(app, ["version"])
     assert result.exit_code == 0
-    assert "EnvWitness 1.0.0" in result.stdout
+    assert "EnvWitness 1.0.1" in result.stdout
 
 
 def test_capture_help_documents_trailing_command() -> None:

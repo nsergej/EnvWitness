@@ -6,6 +6,22 @@ All notable changes follow [Keep a Changelog](https://keepachangelog.com/en/1.1.
 
 No unreleased changes.
 
+## [1.0.1] - 2026-07-23
+
+### Fixed
+
+- kept the CodeQL `init` and `analyze` actions on the same immutable `v4.37.3`
+  revision so Dependabot updates cannot leave the workflow with incompatible
+  action configuration versions;
+- derived the FastAPI application version from the package version instead of
+  maintaining a second hard-coded value.
+
+### Changed
+
+- updated `actions/checkout` to `v7.0.1` and `actions/setup-python` to `v7.0.0`;
+- expanded the supported Rich range to `<16` and the development-only mypy
+  range to `<3`.
+
 ## [1.0.0] - 2026-07-17
 
 ### Added
@@ -43,5 +59,6 @@ No unreleased changes.
 - Docker Compose runs a one-shot capture job compatible with the loopback-only API security model;
 - package-index installation and updater documentation state that PyPI distribution is not part of the 1.0 release.
 
-[Unreleased]: https://github.com/nsergej/EnvWitness/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/nsergej/EnvWitness/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/nsergej/EnvWitness/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/nsergej/EnvWitness/releases/tag/v1.0.0
