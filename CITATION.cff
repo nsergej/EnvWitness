@@ -2,8 +2,8 @@ cff-version: 1.2.0
 message: "If EnvWitness supports your research or operations, please cite the project."
 title: "EnvWitness: Proof-carrying privacy-first bug reports"
 type: software
-version: 1.0.0
-date-released: 2026-07-16
+version: 1.0.1
+date-released: 2026-07-23
 license: Apache-2.0
 repository-code: "https://github.com/nsergej/EnvWitness"
 url: "https://github.com/nsergej/EnvWitness"

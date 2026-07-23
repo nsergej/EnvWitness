@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "envwitness"
-version = "1.0.0"
+version = "1.0.1"
 description = "Proof-carrying, privacy-first bug reports for comparing working and failing developer environments."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,7 +43,7 @@ dependencies = [
   "packaging>=24.2,<27",
   "pydantic>=2.10,<3",
   "pyyaml>=6.0.2,<7",
-  "rich>=13.9,<15",
+  "rich>=13.9,<16",
   "typer>=0.15,<1",
   "uvicorn>=0.32,<1",
 ]
@@ -53,7 +53,7 @@ development = [
   "bandit[toml]>=1.8,<2",
   "build>=1.2,<2",
   "httpx>=0.28,<1",
-  "mypy>=1.14,<2",
+  "mypy>=1.14,<3",
   "pillow>=11,<13",
   "pip-audit>=2.7,<3",
   "pytest>=9.0.3,<10",

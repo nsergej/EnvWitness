@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from envwitness import __version__
 from envwitness.application.services import CaptureRequest, ComparisonService, default_project_label
 from envwitness.domain.errors import EnvWitnessError
 from envwitness.domain.models import Capsule
@@ -119,7 +120,7 @@ def create_api_application(
 
     application = FastAPI(
         title="EnvWitness Local API",
-        version="1.0.0",
+        version=__version__,
         description="Loopback API for proof-carrying diagnostic evidence.",
         docs_url="/api/docs",
         redoc_url=None,

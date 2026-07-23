@@ -70,7 +70,7 @@ Ordinary support archives gather files. EnvWitness models diagnostic disclosure 
 ### GitHub Release
 
 ```bash
-pipx install https://github.com/nsergej/EnvWitness/releases/download/v1.0.0/envwitness-1.0.0-py3-none-any.whl
+pipx install https://github.com/nsergej/EnvWitness/releases/download/v1.0.1/envwitness-1.0.1-py3-none-any.whl
 ```
 
 The release page also contains the source distribution, SPDX SBOM, SHA-256 checksums, and a GitHub build provenance attestation. Verify downloaded files as described in [Installation](docs/installation.md).
@@ -78,7 +78,7 @@ The release page also contains the source distribution, SPDX SBOM, SHA-256 check
 ### Git tag
 
 ```bash
-pipx install "git+https://github.com/nsergej/EnvWitness.git@v1.0.0"
+pipx install "git+https://github.com/nsergej/EnvWitness.git@v1.0.1"
 ```
 
 ### Source
@@ -95,8 +95,8 @@ python -m pip install -e .
 ### Docker
 
 ```bash
-docker build -f docker/Dockerfile -t envwitness:1.0.0 .
-docker run --rm --read-only --tmpfs /tmp -v "$PWD:/workspace" envwitness:1.0.0 capture --project-root /workspace --output /workspace/capture.evw
+docker build -f docker/Dockerfile -t envwitness:1.0.1 .
+docker run --rm --read-only --tmpfs /tmp -v "$PWD:/workspace" envwitness:1.0.1 capture --project-root /workspace --output /workspace/capture.evw
 ```
 
 EnvWitness 1.0 is distributed through GitHub Releases and source tags, not PyPI. See [Installation](docs/installation.md) for PowerShell commands, checksum verification, and isolated development setup.
